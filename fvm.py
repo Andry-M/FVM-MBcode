@@ -21,6 +21,49 @@ from typing import Callable       # Type specifications
 from tqdm import tqdm             # Loop progression bar
 from time import time             # Time measurement  
 
+class Statistics():
+    """
+        Encapsulate the statistics of the solver.\n
+    """
+    def __init__(s, **kwargs):
+        """
+            Initialize the following quantities:
+            - 'res_x' (List[float]) : absolute residuals for the x-axis
+            - 'res_y' (List[float]) : absolute residuals for the y-axis
+            - 'norm_res_x' (List[float]) : normalized residuals for the x-axis (OpenFOAM-like)
+            - 'norm_res_y' (List[float]) : normalized residuals for the y-axis (OpenFOAM-like)
+            - 'on_fly_res_x' (List[float]) : absolute residuals between iterations for the x-axis
+            - 'on_fly_res_y' (List[float]) : absolute residuals between iterations for the y-axis
+            - 'on_fly_res_norm_x' (List[float]) : normalized residuals between iterations for the x-axis
+            - 'on_fly_res_norm_y' (List[float]) : normalized residuals between iterations for the y-axis
+            - 'hist_Ux' (List[np.array]): the history of the x-axis displacement field
+            - 'hist_Uy' (List[np.array]): the history of the y-axis displacement field
+            - 'hist_Bx' (List[dict]): the history of the x-axis source vectors
+            - 'hist_By' (List[dict]): the history of the y-axis source vectors
+            - 'outer_iterations' (List[?]): the statistics of the outer iterations
+            - 'inner_iterations' (List[?]): the statistics of the inner iterations 
+        """
+        # Initialize the statistics that are provided
+        for key, value in kwargs.items():
+            setattr(s, key, value)
+        
+        # Initialize the statistics not provided in kwargs
+        for key in ['res_x', 'res_y', 'norm_res_x', 'norm_res_y', 'on_fly_res_x', 'on_fly_res_y',
+                    'on_fly_res_norm_x', 'on_fly_res_norm_y', 'hist_Ux', 'hist_Uy', 'hist_Bx', 'hist_By',
+                    'outer_iterations', 'inner_iterations']:
+            if not hasattr(s, key):
+                setattr(s, key, [])
+        
+    def append(s, **kwargs):
+        """
+            Append the provided statistics to the existing ones.
+        """
+        for key, value in kwargs.items():
+            if key in s.__dict__.keys():
+                s.__dict__[key].append(value)
+            else:
+                raise ValueError(f'The key {key} is not recognized in the statistics dictionary')
+            
 class StressStrain2d():
     """
         Encapsulate the problem of the Finite Volume Method for the stress-strain analysis in 2D.\n
