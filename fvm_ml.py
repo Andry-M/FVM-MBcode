@@ -9,118 +9,57 @@
 # Description: Machine Learning extension of the Finite Volume Method (FVM) solver for MBcode
 # -----------------------------------------------------------------------------
 
-from fvm import *
+from mb_code.fvm import *
 
 import torch
 
 class StressStrain2dML(StressStrain2d):
-    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable):
-        super().__init__(mesh, b_cond, mu, lambda_, f)
-        
-    def solve(s, max_iter : int, 
+    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable,
+                 init_Ux : List = None, init_Uy : List = None):
+        super().__init__(mesh=mesh,
+                         b_cond=b_cond,
+                         mu=mu, 
+                         lambda_=lambda_, 
+                         f=f, 
+                         init_Ux=init_Ux, 
+                         init_Uy=init_Uy)
+
+    def solve(s, 
+              max_iter : int, 
               tol_res : float = 0, 
-              tol_res_norm : float = 0,
-              tol_trend : float = 0, 
-              continue_ : bool = False,
-              statistics : dict = None, 
-              solver : Callable = scipy_sparse_spsolve,
+              tol_res_norm : float = 0, 
+              solver : Callable = scipy_sparse_spsolve, 
               precond : Callable = lambda *_ : None,
               precond_args : dict = dict(),
               early_stopping : bool = False,
-              inc_trend_counter_max : int = 1, ML_model : Callable = None, 
-              scaler_features = None, scaler_targets = None):
+              inc_trend_counter_max : int = 1,
+              ML_model : Callable = None,
+              scaler_features = None,
+              scaler_targets = None):
         """
-            Solve the elastic stress problem for the given mesh and boundary conditions using the Finite Volume Method
-            and a segregated algorithm.\n
-            Uses a Machine Learning model to fast-forward the iterations.\n
-            The solver is based on a scipy sparse solver function.\n
-            
-            The returned statistics dictionary contains the following data
-            - 'trend' ({'x' : List[float], 'y' : List[float]}) : trends of the displacement fields
-            - 'res' ({'x' : List[float], 'y' : List[float]}) : absolute residuals
-            - 'norm_res' ({'x' : List[float], 'y' : List[float]}) : normalized residuals (OpenFOAM-like)
-            - 'on_fly_res' ({'x' : List[float], 'y' : List[float]}) : absolute residuals between iterations
-            - 'on_fly_res_norm' ({'x' : List[float], 'y' : List[float]}) : normalized residuals between iterations
-            - 'hist_Ux' (List[np.array]): the history of the x-axis displacement field
-            - 'hist_Uy' (List[np.array]): the history of the y-axis displacement field
-            - 'hist_Bx' (List[dict]): the history of the x-axis source vectors
-            - 'hist_By' (List[dict]): the history of the y-axis source vectors
-            - 'outer_iteration_times' (List[float]): the time taken for each outer iteration
-            - 'inner_statistics' ({'x' : ?, 'y' : ?}): the statistics of the inner iterations
-                
+            Solve the elastic strain-stress problem for the given mesh and boundary conditions 
+            using the Finite Volume Method and a segregated algorithm.\n
+        
             Parameters:
-                - max_iter (int) : the maximum number of outer iterations
-                - tol_res (float, default=0) : the tolerance on the residuals for convergence stopping
-                - tol_res_norm (float, default=0) : the tolerance on the normalized residuals for convergence stopping
-                - tol_trend (float, default=0) : the tolerance on the trend of the displacement fields for convergence stopping
-                - continue\_ (bool, default=False) : if True, the solution is continued from the previous one
-                - statistics (dict, default=None) : the dictionary to store the statistics of the solution
-                - solver (Callable, default=scipy.sparse.linalg.spsolve) : the scipy sparse solver function to use to solve the system of equations, should return only the solution
-                - precond (Callable, default= lambda *_ : None) : the preconditionner to use for the solver
-                - precond_args (dict, default=dict()) : the arguments to pass to the preconditionner
-                - early_stopping (bool, default=False) : if True, the early stopping is activated based on the trend of the displacement fields
-                - inc_trend_counter_max (int, default=1) : the maximum number of increasing trend to stop the iterations
-                - ML_model (Callable, default=None) : the Machine Learning model to use to predict the displacement fields
-                - scaler_features (default=None) : the scaler to use for the input of the Machine Learning model
-                - scaler_targets (default=None) : the scaler to use for the output of the Machine Learning model
+                max_iter (int) : maximum number of iterations
+                tol_res (float, default=0) : tolerance for the residual
+                tol_res_norm (float, default=0) : tolerance for the normalized residual
+                solver (Callable, default=inner_solver.scipy_sparse_spsolve) : function to solve the linear system of equations
+                precond (Callable, default=None) : function to construct the preconditioner
+                precond_args (dict, default={}) : arguments for the preconditioner
+                early_stopping (bool, default=False) : flag to enable early stopping
+                inc_trend_counter_max (int, default=1) : maximum number of increasing trends before stopping the iterations
+                ML_model (Callable, default=None) : Machine Learning model to fast-forward the iterations
+                scaler_features (default=None) : the scaler to use for the input of the Machine Learning model
+                scaler_targets (default=None) : the scaler to use for the output of the Machine Learning model
                 
             Returns:
-            - Ux (np.array) : x-axis displacement field               
-            - Uy (np.array) : y-axis displacement field
-            - statistics (dict) : the dictionary storing the statistics of the solution
+                Ux (np.array) x-axis displacement field    
+                Uy (np.array) y-axis displacement field
         """
-        ### Start of statistics ###
-        
-        # Check if the solution is continued that the right statistics are provided
-        if continue_:
-            required_keys = ['trend', 'hist_Ux', 'hist_Uy', 'hist_Bx', 'hist_By', 'outer_iteration_times',
-                             'on_fly_res', 'on_fly_res_norm', 'inner_statistics']
-            if statistics is None:
-                raise ValueError('The statistics dictionary must be provided when continuing the solution')
-            if not all(key in statistics.keys() for key in required_keys):
-                raise ValueError(f'Some required keys {required_keys} are missing in the statistics dictionary')
-            for key in required_keys:
-                if statistics[key] is None:
-                    raise ValueError(f'The key {key} in the statistics dictionary is None \
-                        and must be provided when continuing the solution')
-            # Get the last statistics to append the new ones
-            Ux, Uy = statistics['hist_Ux'][-1], statistics['hist_Uy'][-1]
-            hist_Ux, hist_Uy = statistics['hist_Ux'], statistics['hist_Uy']
-            hist_Bx, hist_By = statistics['hist_Bx'][:-1], statistics['hist_By'][:-1]
-            trend = statistics['trend']
-            outer_times = statistics['outer_iteration_times']
-            inner_statistics_x = statistics['inner_statistics']['x'] # Array of 'inner statistics' of any kind for x-axis
-            inner_statistics_y = statistics['inner_statistics']['y'] # Array of 'inner statistics' of any kind for y-axis
-            on_fly_res = statistics['on_fly_res']
-            on_fly_res_norm = statistics['on_fly_res_norm']
-        else: 
-            # Initialize the displacement field
-            Ux, Uy = np.zeros(s.n_cells), np.zeros(s.n_cells)
-            # Dictionary to store all the statistics
-            statistics = {}
-            # Trend of the displacement fields
-            trend = {'x' : [], 'y' : []}
-            # History of the displacement fields
-            hist_Ux = [Ux] 
-            hist_Uy = [Uy]
-            # History of the source vectors
-            hist_Bx = []
-            hist_By = []
-            # List of times per outer iteration
-            outer_times = []
-            # Information to store "on the fly" for early stopping
-            # 0 values are used for the first iteration progression bar display
-            on_fly_res = {'x' : [0], 'y' : [0]}
-            on_fly_res_norm = {'x' : [0], 'y' : [0]}
-            # List of inner statistics
-            inner_statistics_x = []
-            inner_statistics_y = []
-            
-        # Final residuals computed using the converged source vector
-        res = {'x' : [], 'y' : []}
-        res_norm = {'x' : [], 'y' : []}
-        
-        ### End of statistics ###
+        ### Initialisation ###
+
+        Ux, Uy = s.init_Ux.copy(), s.init_Uy.copy()
         
         # Early stopping increasing trend stack
         early_stopping_flag_x = False # Flag to stop the iterations for x-axis
@@ -134,8 +73,6 @@ class StressStrain2dML(StressStrain2d):
         if ML_model is not None:
             input_dim = ML_model.input_dim
             nb_iteration_per_input = int(input_dim//2)
-                    
-        ### Start of solver ###
         
         # Construct the stiffness matrix and the body force source term
         Ax, Ay = s.stiffness()
@@ -156,11 +93,20 @@ class StressStrain2dML(StressStrain2d):
         Bx = lambda: Bx_t + Bx_b + Bx_f + Bx_c
         By = lambda: By_t + By_b + By_f + By_c
         
-        # Store the initial source vectors
-        hist_Bx.append({'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()})
-        hist_By.append({'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()})
+        # Store the initial statistics
+        s.statistics.store(
+            trend_x = 0, trend_y = 0,
+            res_x = 0, res_y = 0,
+            res_norm_x = 0, res_norm_y = 0,
+            on_fly_res_x = 0, on_fly_res_y = 0,
+            on_fly_res_norm_x = 0, on_fly_res_norm_y = 0,
+            hist_Ux = Ux, hist_Uy = Uy,
+            hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
+            hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()} 
+        )
         
-        for step in (pbar := tqdm(range(1,int(max_iter+1)))):
+        # Start the iterations
+        for step in (pbar := tqdm(range(int(max_iter)))):
             outer_start_time = time()
             
             ## START OF OUTER ITERATION ##
@@ -170,8 +116,8 @@ class StressStrain2dML(StressStrain2d):
                 for cell in range(s.n_cells):
                     ML_input = []
                     for i in range(nb_iteration_per_input):
-                        ML_input.append(hist_Ux[i][cell])
-                        ML_input.append(hist_Uy[i][cell])
+                        ML_input.append(s.statistics.hist_Ux[i][cell])
+                        ML_input.append(s.statistics.hist_Uy[i][cell])
                     ML_input = torch.tensor(ML_input, dtype=torch.float32).reshape(1,-1)
                     ML_input = scaler_features.transform(ML_input)
                     
@@ -188,32 +134,31 @@ class StressStrain2dML(StressStrain2d):
                 Bx_c = s.source_correction_x(grad_Ux, Bx_c) # will be reupdated later before use but calculated for storage
                 By_t = s.source_transverse_y(grad_Ux, By_t) # will be reupdated later before use but calculated for storage
                 By_c = s.source_correction_y(grad_Uy, By_c)
-                inner_statistics_x.append({'info' : 'ml', 'iterations' : None})
-                inner_statistics_y.append({'info' : 'ml', 'iterations' : None})
+                inner_statistics_x = {'info' : 'ml', 'iterations' : None}
+                inner_statistics_y = {'info' : 'ml', 'iterations' : None}
             
             else:
-                   
                 # Solve the system of equations for x-axis
                 output = solver(Ax, Bx(), x0=Ux, M=Mx) # INNER ITERATIONS
                 if isinstance(output, tuple):  # If the solver returns the solution and some statistics
                     Ux = output[0]
-                    inner_statistics_x.append(output[1])
+                    inner_statistics_x = output[1]
                 else:
                     Ux = output
-                    inner_statistics_x.append(None)
+                    inner_statistics_x = None
                 grad_Ux = s.grad(Ux)
                 # Update the source terms
                 By_t = s.source_transverse_y(grad_Ux, By_t)
-                Bx_c = s.source_correction_x(grad_Ux, Bx_c)  
-                
+                Bx_c = s.source_correction_x(grad_Ux, Bx_c)
+                            
                 # Solve the system of equations for y-axis
                 output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
                 if  isinstance(output, tuple): # If the solver returns the solution and some statistics
                     Uy = output[0]
-                    inner_statistics_y.append(output[1])
+                    inner_statistics_y = output[1]
                 else: 
                     Uy = output
-                    inner_statistics_y.append(None)
+                    inner_statistics_y = None
                 grad_Uy = s.grad(Uy)
                 # Update the source terms
                 Bx_t = s.source_transverse_x(grad_Uy, Bx_t)
@@ -222,40 +167,34 @@ class StressStrain2dML(StressStrain2d):
             ## END OF OUTER ITERATION ##
             
             outer_end_time = time()
-            outer_times.append(outer_end_time-outer_start_time)
             
-            # Calculate the residuals "on the fly" for early stopping
-            on_fly_res['x'].append(residual(Ax, Ux, Bx()))
-            on_fly_res['y'].append(residual(Ay, Uy, By()))
-            on_fly_res_norm['y'].append(residual_norm(Ay, Uy, By()))
-            on_fly_res_norm['x'].append(residual_norm(Ax, Ux, Bx()))
-            
-            # Store the displacement fields
-            hist_Ux.append(Ux)
-            hist_Uy.append(Uy)
-            
-            # Store the source vectors
-            hist_Bx.append({'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()})
-            hist_By.append({'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()})
-                        
-            # Trend between outer iterations
-            trend['x'].append(np.linalg.norm(hist_Ux[-1]-hist_Ux[-2],1))
-            trend['y'].append(np.linalg.norm(hist_Uy[-1]-hist_Uy[-2],1))
+            # Store the statistics
+            s.statistics.store(
+                trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
+                trend_y = np.linalg.norm(Uy-s.statistics.hist_Uy[-1],1),
+                on_fly_res_x = residual(Ax, Ux, Bx()), on_fly_res_y = residual(Ay, Uy, By()),
+                on_fly_res_norm_x = residual_norm(Ax, Ux, Bx()), on_fly_res_norm_y = residual_norm(Ay, Uy, By()),
+                hist_Ux = Ux, hist_Uy = Uy,
+                hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
+                hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()},
+                outer_iterations = {'time' : outer_end_time - outer_start_time},
+                inner_iterations = {'x' : inner_statistics_x, 'y' : inner_statistics_y}
+            )
             
             # Print the progress of the iterations
-            pbar.set_postfix_str(f'Normalized residuals: Rx {on_fly_res_norm["x"][-1]:.2e}, Ry {on_fly_res_norm["y"][-1]:.2e}, dRx {on_fly_res_norm["x"][-1]-on_fly_res_norm["x"][-2]:.2e}, dRy {on_fly_res_norm["y"][-1]-on_fly_res_norm["y"][-2]:.2e}')
+            pbar.set_postfix_str(f"Normalized residuals: Rx {s.statistics.on_fly_res_norm_x[-1]:.2e}, Ry {s.statistics.on_fly_res_norm_y[-1]:.2e}, dRx {s.statistics.on_fly_res_norm_x[-1]-s.statistics.on_fly_res_norm_x[-2]:.2e}, dRy {s.statistics.on_fly_res_norm_y[-1]-s.statistics.on_fly_res_norm_y[-2]:.2e}")
     
             # Check early stopping criteria
-            if step>1 and early_stopping:
+            if step>0 and early_stopping:
                 if not early_stopping_flag_x:
-                    if trend['x'][-1] >= trend['x'][-2]: # Check if the trend is increasing
+                    if s.statistics.trend_x[-1] >= s.statistics.trend_x[-2]: # Check if the trend is increasing
                         inc_trend_counter_x += 1 # Increment the counter
                     else:
                         inc_trend_counter_x = 0 # Reset the counter
                     if inc_trend_counter_x > inc_trend_counter_max: # Check if the counter is above the maximum
                         early_stopping_flag_x = True # Set the flag to stop the iterations
                 if not early_stopping_flag_y:
-                    if trend['y'][-1] >= trend['y'][-2]: # Check if the trend is increasing
+                    if s.statistics.trend_y[-1] >= s.statistics.trend_y[-2]: # Check if the trend is increasing
                         inc_trend_counter_y += 1 # Increment the counter
                     else :
                         inc_trend_counter_y = 0 # Reset the counter
@@ -263,49 +202,28 @@ class StressStrain2dML(StressStrain2d):
                         early_stopping_flag_y = True # Set the flag to stop the iterations
                 if early_stopping_flag_x and early_stopping_flag_y:
                     print('Early stopping after', step, 'iterations due to increasing trend')
-                    break
-            # Convergence critetion based on the trend
-            if trend['x'][-1] < tol_trend and trend['y'][-1] < tol_trend: # Check if the trend is below the tolerance
-                print('Solution converged after', step, 'iterations based on the trend of the displacement fields')
-                break            
+                    break          
             # Convergence criterion on the fly (residuals)
-            if on_fly_res['x'][-1] < tol_res and on_fly_res['y'][-1] < tol_res: # Check if the absolute residuals are below the tolerance
+            if s.statistics.on_fly_res_x[-1] < tol_res and s.statistics.on_fly_res_y[-1] < tol_res: # Check if the absolute residuals are below the tolerance
                 print('Solution converged after', step, 'iterations based on the calculation of the residuals "on the fly"')
                 break
             # Convergence criterion on the fly (normalized residuals)
-            if on_fly_res_norm['x'][-1] < tol_res_norm and on_fly_res_norm['y'][-1] < tol_res_norm: 
+            if s.statistics.on_fly_res_norm_x[-1] < tol_res_norm and s.statistics.on_fly_res_norm_y[-1] < tol_res_norm: 
                 # Check if the normalized residuals are below the tolerance
                 print('Solution converged after', step, 'iterations based on the calculation of the normalized residuals "on the fly"')
                 break
-            
-        ### End of solver ###
         
-        # Update the source terms that are not yet up-to-date
-        By_c = s.source_correction_y(grad_Uy, By_c) 
-        Bx_t = s.source_transverse_x(grad_Uy, Bx_t)
-
         # Store the residuals using the converged source vector
-        for i in range(1,len(hist_Ux)):
-            # Absolute residuals at outer iterations
-            res['x'].append(residual(Ax, hist_Ux[i], Bx()))
-            res['y'].append(residual(Ay, hist_Uy[i], By()))
-            # Normalized residuals at outer iterations
-            res_norm['x'].append(residual_norm(Ax, hist_Ux[i], Bx()))
-            res_norm['y'].append(residual_norm(Ay, hist_Uy[i], By()))
+        for i in range(step):
+            s.statistics.store(
+                res_x = residual(Ax, s.statistics.hist_Ux[i], Bx()),
+                res_y = residual(Ay, s.statistics.hist_Uy[i], By()),
+                res_norm_x = residual_norm(Ax, s.statistics.hist_Ux[i], Bx()),
+                res_norm_y = residual_norm(Ay, s.statistics.hist_Uy[i], By())
+            )
         
-        # Store the statistics
-        statistics['trend'] = trend
-        statistics['res'] = res
-        statistics['res_norm'] = res_norm
-        statistics['hist_Ux'] = np.array(hist_Ux)
-        statistics['hist_Uy'] = np.array(hist_Uy)
-        statistics['hist_Bx'] = hist_Bx
-        statistics['hist_By'] = hist_By
-        statistics['on_fly_res'] = on_fly_res
-        statistics['on_fly_res_norm'] = on_fly_res_norm
-        statistics['outer_iteration_times'] = outer_times
-        statistics['inner_statistics'] = {'x' : inner_statistics_x, 'y' : inner_statistics_y}
-        statistics['precond'] = precond.__name__
-        statistics['precond_args'] = precond_args
-            
-        return Ux, Uy, statistics
+        # Store the extra statistics
+        s.statistics.add('precond', precond.__name__)
+        s.statistics.add('precond_args', precond_args)
+        
+        return Ux, Uy    
