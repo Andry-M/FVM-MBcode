@@ -495,8 +495,8 @@ class StressStrain2d_block(StressStrain2d):
             res = 0,
             res_norm = 0,
             hist_Ux = Ux, hist_Uy = Uy,
-            hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : Bx()},
-            hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : By()} 
+            hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
+            hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : B()[s.n_cells:]} 
         )
 
         # GRID CORRECTION ITERATIONS
@@ -526,8 +526,8 @@ class StressStrain2d_block(StressStrain2d):
                 res_norm = residual_norm(A, U, B()),
                 inner_iterations = inner_statistics,
                 hist_Ux = U[:s.n_cells], hist_Uy = U[s.n_cells:],
-                hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : Bx()},
-                hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : By()}, 
+                hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
+                hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : B()[s.n_cells:]}, 
                 outer_iterations = {'time' : end_time-start_time},
             )
             
@@ -545,7 +545,7 @@ class StressStrain2d_block(StressStrain2d):
         s.statistics.add('precond', precond.__name__)
         s.statistics.add('precond_args', precond_args)
         
-        return Ux, Uy
+        return U[:s.n_cells], U[s.n_cells:]
 
     def compute_stress(s, Ux : np.array, Uy : np.array):
         """
