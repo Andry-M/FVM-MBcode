@@ -10,7 +10,7 @@
 # stress-strain problem using a block-coupled algorithm instead of a segregated algorithm. 
 # -----------------------------------------------------------------------------
 
-from fvm import *
+from mb_code.fvm import *
 
 # Libraries importation
 import numpy as np              # Array manipulation
@@ -23,7 +23,8 @@ class StressStrain2d_block(StressStrain2d):
     """
         Encapsulate the block-coupled problem of the Finite Volume Method for the stress-strain analysis in 2D.\n
     """
-    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable):
+    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable, 
+                 init_Ux : List = None, init_Uy : List = None):
         """
             Parameters:
                 - mesh (Mesh2d) : mesh of the domain
@@ -32,7 +33,13 @@ class StressStrain2d_block(StressStrain2d):
                 - lambda_ (Callable) : Lame's first parameter function
                 - f (Callable) : body force function
         """
-        super().__init__(mesh, b_cond, mu, lambda_, f)
+        super().__init__(mesh=mesh,
+                         b_cond=b_cond,
+                         mu=mu,
+                         lambda_=lambda_,
+                         f=f,
+                         init_Ux=init_Ux,
+                         init_Uy=init_Uy)
         s.n_dim = 2 # Number of dimensions
         
     def stiffness(s):
@@ -434,7 +441,8 @@ class StressStrain2d_block(StressStrain2d):
                     raise ValueError('Boundary condition type not recognized for y-axis')
         return B
     
-    def solve(s, max_iter : int = 10, 
+    def solve(s, 
+              max_iter : int = 10, 
               apply_grid_correction : bool = False,
               tol_res_norm : float = 1e-15,
               solver : Callable = scipy_sparse_spsolve,
@@ -443,31 +451,26 @@ class StressStrain2d_block(StressStrain2d):
         """
             Solve the elastic stress problem for the given mesh and boundary conditions using the Finite Volume Method
             and a block-coupled (actually fully coupled unique system) algorithm.\n
-            The solver is based on a scipy sparse solver function.\n
                 
             Parameters:
-                - max_iter (int, default=20) : maximum number of iterations for the unstructured grid correction
-                - apply_grid_correction (bool, default=False) : apply the unstructured grid correction
-                - tol_res_norm (float, default=0) : tolerance for the unstructured grid correction (iterative correction) in the norm of the residual
-                - solver (Callable, default=sps.linalg.spsolve) : sparse solver function to solve the system of equations
-                - precond (Callable, default= lambda *_ : None) : the preconditionner to use for the solver
-                - precond_args (dict, default=dict()) : the arguments to pass to the preconditionner
+                max_iter (int, default=20) : maximum number of iterations for the unstructured grid correction
+                apply_grid_correction (bool, default=False) : apply the unstructured grid correction
+                tol_res_norm (float, default=0) : tolerance for the unstructured grid correction (iterative correction) in the norm of the residual
+                solver (Callable, default=sps.linalg.spsolve) : sparse solver function to solve the system of equations
+                precond (Callable, default= lambda *_ : None) : the preconditionner to use for the solver
+                precond_args (dict, default=dict()) : the arguments to pass to the preconditionner
                 
             Returns:
-            - U (np.array) : displacement field
-            - statistics : statistics of the linear solver
-            - duration (float) : duration of the solver
+                Ux (np.array) x-axis displacement field    
+                Uy (np.array) y-axis displacement field
         """
+        ### Initialisation ###
+
+        Ux, Uy = s.init_Ux.copy(), s.init_Uy.copy()
+        U = np.concatenate((Ux, Uy), axis=0)
+        
         if not apply_grid_correction:
             max_iter = 1
-        
-        # Statistics
-        durations = [] # Duration of the solver iterations
-        inner_solver = [] # Inner solver statistics
-        hist_Ux = [] # History of the x-axis displacement field
-        hist_Uy = [] # History of the y-axis displacement field
-        res = [] # Residual
-        res_norm = [] # Normalized residual
         
         init_time = time() # Start the timer for the total duration of the solver
         
@@ -478,17 +481,23 @@ class StressStrain2d_block(StressStrain2d):
         M = precond(A, **precond_args) 
         
         B_f = s.source_body_force()
-        B_b = s.source_boundary()
-        
-        # Initialize the displacement field
-        U = np.zeros(s.n_cells*s.n_dim)
-        hist_Ux.append(U[:s.n_cells])
-        hist_Uy.append(U[s.n_cells:])
-        
+        B_b = s.source_boundary()        
         # Unstructured grid correction
         B_c = np.zeros(s.n_cells*s.n_dim)
         
         B = lambda: B_f + B_b + B_c
+        
+        # Store the initial statistics
+        s.statistics.add('res', [])
+        s.statistics.add('res_norm', [])
+        s.statistics.add('inner_iterations', [])
+        s.statistics.store(
+            res = 0,
+            res_norm = 0,
+            hist_Ux = Ux, hist_Uy = Uy,
+            hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : Bx()},
+            hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : By()} 
+        )
 
         # GRID CORRECTION ITERATIONS
         for step in (pbar := tqdm(range(int(max_iter)))):
@@ -511,17 +520,16 @@ class StressStrain2d_block(StressStrain2d):
                     if inner_statistics['info'] > 0:
                         print(f'Iteration {step}: Solver did not converge, try to increase the number of iterations or decrease the tolerance')
             
-            # Compute statistics
-            it_time = end_time-start_time
-            it_res = residual(A, U, B())
-            it_res_norm = residual_norm(A, U, B())
-            # Save statistics
-            inner_solver.append(inner_statistics)
-            hist_Ux.append(U[:s.n_cells])
-            hist_Uy.append(U[s.n_cells:])
-            durations.append(it_time)
-            res.append(it_res)
-            res_norm.append(it_res_norm)
+            # Store the statistics
+            s.statistics.store(
+                res = residual(A, U, B()),
+                res_norm = residual_norm(A, U, B()),
+                inner_iterations = inner_statistics,
+                hist_Ux = U[:s.n_cells], hist_Uy = U[s.n_cells:],
+                hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : Bx()},
+                hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : By()}, 
+                outer_iterations = {'time' : end_time-start_time},
+            )
             
             # Print the progress of the iterations
             if apply_grid_correction:
@@ -533,18 +541,11 @@ class StressStrain2d_block(StressStrain2d):
             elif not apply_grid_correction:
                 break
         
-        # Save the statistics
-        statistics = {'durations' : durations, # Duration of the solver iterations 
-                'inner_solver' : inner_solver, # Inner solver statistics
-                'hist_Ux' : hist_Ux, # History of the x-axis displacement field
-                'hist_Uy' : hist_Uy, # History of the y-axis displacement field
-                'res' : res, # Residual
-                'res_norm' : res_norm, # Normalized residual
-                'total_duration' : time()-init_time, # Total duration of the solver
-                'precond' : precond.__name__, # Preconditionner name
-                'precond_args' : precond_args
-            }
-        return hist_Ux[-1], hist_Uy[-1], statistics
+        # Store the extra statistics
+        s.statistics.add('precond', precond.__name__)
+        s.statistics.add('precond_args', precond_args)
+        
+        return Ux, Uy
 
     def compute_stress(s, Ux : np.array, Uy : np.array):
         """
