@@ -9,7 +9,7 @@
 # Description: Post-processing functions for the Finite Volume Method implemented in MBcode
 # -----------------------------------------------------------------------------
 
-from mb_code.mesher import Mesh2d, BeamMeshHole2d
+from mesher import Mesh2d, BeamMeshHole2d
 
 # Libraries importation
 import numpy as np                                              # Array manipulation

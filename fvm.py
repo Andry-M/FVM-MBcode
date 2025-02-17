@@ -9,10 +9,10 @@
 # Description: Finite Volume Method (FVM) segregated solver for the stress-strain problem
 # -----------------------------------------------------------------------------
 
-from mb_code.mesher import *
-from mb_code.utils import *
-from mb_code.inner_solver import scipy_sparse_spsolve
-from mb_code.parameters import DTYPE
+from mesher import *
+from utils import *
+from inner_solver import scipy_sparse_spsolve
+from parameters import DTYPE
 
 # Libraries importation
 import numpy as np                # Array manipulation

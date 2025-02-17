@@ -10,7 +10,7 @@
 # stress-strain problem using a block-coupled algorithm instead of a segregated algorithm. 
 # -----------------------------------------------------------------------------
 
-from mb_code.fvm import *
+from fvm import *
 
 # Libraries importation
 import numpy as np              # Array manipulation

@@ -11,7 +11,7 @@
 
 from numpy import isnan
 from numpy.linalg import norm
-from mb_code.parameters import RTOL, ATOL, MAXITER
+from parameters import RTOL, ATOL, MAXITER
 
 def __solver_core(solver, A, b, x0, M):
     iters = 0

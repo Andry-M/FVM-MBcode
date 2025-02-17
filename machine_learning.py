@@ -15,7 +15,7 @@ import torch.nn as nn                                   # Neural network module
 from torch.utils.data import DataLoader, TensorDataset
 torch.autograd.set_detect_anomaly(True)                 # Detects NaNs in the gradients
 from sklearn.model_selection import train_test_split
-from mb_code.parameters import DEVICE                   # Import parameters
+from parameters import DEVICE                   # Import parameters
 
 with torch.device(DEVICE):
     TORCH_DEVICE = torch.tensor([0]).device

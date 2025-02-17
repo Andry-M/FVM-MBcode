@@ -9,7 +9,7 @@
 # Description: Machine Learning extension of the Finite Volume Method (FVM) solver for MBcode
 # -----------------------------------------------------------------------------
 
-from mb_code.fvm import *
+from fvm import *
 
 import torch
 
