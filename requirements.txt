@@ -1,0 +1,7 @@
+# Base scientific packages
+scipy
+numpy
+matplotlib
+
+# Cosmetics
+tqdm
