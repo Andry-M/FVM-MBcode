@@ -18,7 +18,7 @@ from datetime import datetime           # Timestamp for saving plots
 from os.path import isdir               # For folder test
 from os import makedirs                 # For folder creation
 from datetime import datetime           # Timestamp for saving plots
-from parameters import DTYPE    # Import the parameters
+from mb_code.parameters import DTYPE    # Import the parameters
 
 class Cell():
     """
