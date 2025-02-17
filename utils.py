@@ -113,6 +113,18 @@ def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename : str =
         timestamp = now.strftime("%Y%m%d_%H%M%S")
         plt.savefig(f"Results/plot_history_{filename}_{timestamp}.png", dpi=500)
         
+def plot_history_fvm(trend_x : List, 
+                     trend_y : List,
+                     res_x : List,
+                     res_y : List,
+                     res_norm_x : List,
+                     res_norm_y : List,
+                     filename : str = None):
+    plot_history_fvm({'x': trend_x, 'y': trend_y},
+                     {'x': res_x, 'y': res_y},
+                     {'x': res_norm_x, 'y': res_norm_y},
+                     filename)
+        
 def plot_point_solution_imshow(points : np.array, Ux : np.array, Uy : np.array, field : str = None, filename : str = None):
     """
         Plot the displacement field on the corresponding grid of points using matplotlib.pyplot.imshow.\n
