@@ -10,6 +10,7 @@
 # -----------------------------------------------------------------------------
 
 from mb_code.mesher import Mesh2d, BeamMeshHole2d
+from multimethod import multimethod
 
 # Libraries importation
 import numpy as np                                              # Array manipulation
@@ -66,8 +67,9 @@ def residual_map(Ux, Uy, Ux_ref, Uy_ref) -> np.array:
             - U_ref (np.array) : Reference displacement field U_ref
     """
     return np.linalg.norm(np.array([Ux, Uy]) - np.array([Ux_ref, Uy_ref]), 2, axis=0)    
-    
-def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename : str = None):
+
+@multimethod  
+def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename = None):
     """
         Plot the history of the convergence criteria for the Finite Volume Method.
         
@@ -77,6 +79,7 @@ def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename : str =
             - res_norm (dict) : normalized residuals at outer iterations
             - filename (str, default=None) : name of the file to save the plot. If None, no file is saved.
     """
+    filename = str(filename)
     fig, axs = plt.subplots(1, 3, figsize=(20, 5), tight_layout=True)
     # Trend
     axs[0].plot(trend['x'], label='x-axis', color='darkblue', linewidth=1.5)
@@ -112,18 +115,31 @@ def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename : str =
         now = datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S")
         plt.savefig(f"Results/plot_history_{filename}_{timestamp}.png", dpi=500)
-        
+
+@multimethod
 def plot_history_fvm(trend_x : List, 
                      trend_y : List,
                      res_x : List,
                      res_y : List,
                      res_norm_x : List,
                      res_norm_y : List,
-                     filename : str = None):
+                     filename : str):
     plot_history_fvm({'x': trend_x, 'y': trend_y},
                      {'x': res_x, 'y': res_y},
                      {'x': res_norm_x, 'y': res_norm_y},
                      filename)
+
+@multimethod
+def plot_history_fvm(trend_x : List, 
+                     trend_y : List,
+                     res_x : List,
+                     res_y : List,
+                     res_norm_x : List,
+                     res_norm_y : List):
+    plot_history_fvm({'x': trend_x, 'y': trend_y},
+                     {'x': res_x, 'y': res_y},
+                     {'x': res_norm_x, 'y': res_norm_y},
+                     None)
         
 def plot_point_solution_imshow(points : np.array, Ux : np.array, Uy : np.array, field : str = None, filename : str = None):
     """
