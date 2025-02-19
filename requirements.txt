@@ -2,6 +2,7 @@
 scipy
 numpy
 matplotlib
+multimethod
 
 # Cosmetics
 tqdm
