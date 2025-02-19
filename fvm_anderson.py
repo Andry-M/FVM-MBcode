@@ -6,7 +6,7 @@
 # Context: Semester project - INCEPTION – Investigating New Convergence schEmes 
 #          for Performance and Time Improvement Of fuel and Neutronics calculations
 #
-# Description: Machine Learning extension of the Finite Volume Method (FVM) solver for MBcode
+# Description: Anderson mixing extension of the Finite Volume Method (FVM) solver for MBcode
 # -----------------------------------------------------------------------------
 
 from mb_code.fvm import *
