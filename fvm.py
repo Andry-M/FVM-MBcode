@@ -736,7 +736,7 @@ class StressStrain2d():
                 break
         
         # Store the residuals using the converged source vector
-        for i in range(step):
+        for i in range(step+2): # +1 (initial state), +1 (step starts at zero)
             s.statistics.store(
                 res_x = residual(Ax, s.statistics.hist_Ux[i], Bx()),
                 res_y = residual(Ay, s.statistics.hist_Uy[i], By()),
