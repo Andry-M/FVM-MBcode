@@ -32,7 +32,7 @@ class StressStrain2d_Anderson(StressStrain2d):
               early_stopping : bool = False,
               inc_trend_counter_max : int = 1,
               anderson_order : int = 30,
-              alpha : float = 1.0):
+              relax : float = 1.0):
         """
             Solve the elastic strain-stress problem for the given mesh and boundary conditions 
             using the Finite Volume Method and a segregated algorithm.\n
@@ -47,6 +47,7 @@ class StressStrain2d_Anderson(StressStrain2d):
                 early_stopping (bool, default=False) : flag to enable early stopping
                 inc_trend_counter_max (int, default=1) : maximum number of increasing trends before stopping the iterations
                 anderson_order (int, default=30) : number of previous solutions to use in the Anderson mixing algorithm
+                relax (float, default=1.0) : relaxation factor for the Anderson mixing algorithm
                 
             Returns:
                 Ux (np.array) x-axis displacement field    
@@ -137,8 +138,8 @@ class StressStrain2d_Anderson(StressStrain2d):
                     Ux += anderson_coeffs_y[o]*s.statistics.hist_Ux[step-anderson_order+o]
                     Uy += anderson_coeffs_x[o]*s.statistics.hist_Uy[step-anderson_order+o]
                 
-                Ux = alpha*Ux + (1-alpha)*s.statistics.hist_Ux[-1]
-                Uy = alpha*Uy + (1-alpha)*s.statistics.hist_Uy[-1]
+                Ux = relax*Ux + (1-relax)*s.statistics.hist_Ux[-1]
+                Uy = relax*Uy + (1-relax)*s.statistics.hist_Uy[-1]
                 
                 # Update the source terms
                 grad_Ux = s.grad(Ux)
