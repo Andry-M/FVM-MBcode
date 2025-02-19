@@ -230,25 +230,17 @@ class StressStrain2d():
         
         return grad_U       
     
-    def source_transverse_x(s, grad_Uy : np.array = None, Bx : np.array = None):
+    def source_transverse_x(s, grad_Uy : np.array = None):
         """
             Calculate the source term for the transverse contribution for the x-axis component.
-            
-            Passing the source term Bx as an argument allows to avoid memory allocation at each call.
-            
+                        
             Parameters:
                 - grad_Uy (np.array) : gradient of the y-axis displacement field (LSQ method)
-                - Bx (np.array, default=None) : source term Bx. If None, it is initialized as a zero array.
             
             Returns:
             - Bx (np.array) : source term in y-axis
         """  
-        # Initialize the source term By if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if Bx is None:   
-            Bx = np.zeros((s.n_cells))
-        else:
-            Bx.fill(0) # Reset the source term By
+        Bx = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells            
             # Iterate through inner faces
@@ -284,25 +276,17 @@ class StressStrain2d():
         
         return Bx
     
-    def source_transverse_y(s, grad_Ux : np.array = None, By : np.array = None):
+    def source_transverse_y(s, grad_Ux : np.array = None):
         """
             Calculate the source term for the transverse contribution for the y-axis component.
-            
-            Passing the source term By as an argument allows to avoid memory allocation at each call.
-            
+                        
             Parameters:
                 - grad_Ux (np.array) : gradient of the x-axis displacement field (LSQ method)
-                - By (np.array, default=None) : source term By. If None, it is initialized as a zero array.
             
             Returns:
             - By (np.array) : source term in y-axis
         """  
-        # Initialize the source term By if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if By is None:   
-            By = np.zeros((s.n_cells))
-        else:
-            By.fill(0) # Reset the source term By
+        By = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells            
             # Iterate through inner faces
@@ -338,24 +322,14 @@ class StressStrain2d():
         
         return By
   
-    def source_boundary_x(s, Bx : np.array = None):
+    def source_boundary_x(s):
         """
             Calculate the source term for the boundary conditions for the x-axis component.
-            
-            Passing the source term Bx as an argument allows to avoid memory allocation at each call.
-            
-            Parameters:
-                - Bx (np.array, default=None) : source term Bx. If None, it is initialized as a zero array.
-            
+                        
             Returns:
             - Bx (np.array) : source term in y-axis
-        """  
-        # Initialize the source term Bx if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if Bx is None:   
-            Bx = np.zeros((s.n_cells))
-        else:
-            Bx.fill(0) # Reset the source term Bx
+        """    
+        Bx = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells                        
             # Iterate through outer faces (boundaries)
@@ -386,11 +360,9 @@ class StressStrain2d():
         
         return Bx
   
-    def source_boundary_y(s, By : np.array = None):
+    def source_boundary_y(s):
         """
             Calculate the source term for the boundary conditions for the y-axis component.
-            
-            Passing the source term By as an argument allows to avoid memory allocation at each call.
             
             Parameters:
                 - By (np.array, default=None) : source term By. If None, it is initialized as a zero array.
@@ -398,12 +370,7 @@ class StressStrain2d():
             Returns:
             - By (np.array) : source term in y-axis
         """  
-        # Initialize the source term By if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if By is None:   
-            By = np.zeros((s.n_cells))
-        else:
-            By.fill(0) # Reset the source term By
+        By = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells                        
             # Iterate through outer faces (boundaries)
@@ -434,25 +401,17 @@ class StressStrain2d():
         
         return By
    
-    def source_correction_x(s, grad_Ux : np.array = None, Bx : np.array = None):
+    def source_correction_x(s, grad_Ux : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the x-axis component.
-            
-            Passing the source term Bx as an argument allows to avoid memory allocation at each call.
-            
+                        
             Parameters:
                 - grad_Ux (np.array) : gradient of the x-axis displacement field (LSQ method)
-                - Bx (np.array, default=None) : source term Bx. If None, it is initialized as a zero array.
             
             Returns:
             - Bx (np.array) : source term in y-axis
         """  
-        # Initialize the source term Bx if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if Bx is None:   
-            Bx = np.zeros((s.n_cells))
-        else:
-            Bx.fill(0) # Reset the source term By
+        Bx = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells            
             # Iterate through inner faces
@@ -509,25 +468,17 @@ class StressStrain2d():
         
         return Bx
     
-    def source_correction_y(s, grad_Uy : np.array = None, By : np.array = None):
+    def source_correction_y(s, grad_Uy : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the y-axis component.
-            
-            Passing the source term By as an argument allows to avoid memory allocation at each call.
-            
+                        
             Parameters:
                 - grad_Uy (np.array) : gradient of the y-axis displacement field (LSQ method)
-                - By (np.array, default=None) : source term By. If None, it is initialized as a zero array.
-            
+                            
             Returns:
             - By (np.array) : source term in y-axis
         """  
-        # Initialize the source term By if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if By is None:   
-            By = np.zeros((s.n_cells))
-        else:
-            By.fill(0) # Reset the source term By
+        By = np.zeros((s.n_cells))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells            
             # Iterate through inner faces
@@ -670,8 +621,8 @@ class StressStrain2d():
                 inner_statistics_x = None
             grad_Ux = s.grad(Ux)
             # Update the source terms
-            By_t = s.source_transverse_y(grad_Ux, By_t)
-            Bx_c = s.source_correction_x(grad_Ux, Bx_c)
+            By_t = s.source_transverse_y(grad_Ux)
+            Bx_c = s.source_correction_x(grad_Ux)
                         
             # Solve the system of equations for y-axis
             output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
@@ -683,9 +634,9 @@ class StressStrain2d():
                 inner_statistics_y = None
             grad_Uy = s.grad(Uy)
             # Update the source terms
-            Bx_t = s.source_transverse_x(grad_Uy, Bx_t)
-            By_c = s.source_correction_y(grad_Uy, By_c)
-            
+            Bx_t = s.source_transverse_x(grad_Uy)
+            By_c = s.source_correction_y(grad_Uy)
+
             ## END OF OUTER ITERATION ##
             
             outer_end_time = time()

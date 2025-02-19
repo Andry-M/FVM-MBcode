@@ -261,24 +261,14 @@ class StressStrain2d_block(StressStrain2d):
         
         return grad_U      
   
-    def source_boundary(s, B : np.array = None):
+    def source_boundary(s):
         """
             Calculate the source term for the boundary conditions.
-            
-            Passing the source term B as an argument allows to avoid memory allocation at each call.
-            
-            Parameters:
-                - B (np.array, default=None) : previous source term B. If None, it is initialized as a zero array.
-            
+
             Returns:
             - B (np.array)
-        """  
-        # Initialize the source term B if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if B is None:   
-            B = np.zeros((s.n_cells*s.n_dim))
-        else:
-            B.fill(0) # Reset the source term B
+        """    
+        B = np.zeros((s.n_cells*s.n_dim))
 
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells                        
             # Iterate through outer faces (boundaries)
@@ -325,25 +315,17 @@ class StressStrain2d_block(StressStrain2d):
         
         return B
    
-    def source_correction(s, grad_U : np.array = None, B : np.array = None):
+    def source_correction(s, grad_U : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness).
-            
-            Passing the source term B as an argument allows to avoid memory allocation at each call.
-            
+                        
             Parameters:
                 - grad_U (np.array) : gradient (LSQ method)
-                - B (np.array, default=None) : source term B. If None, it is initialized as a zero array.
             
             Returns:
             - B (np.array) : source term in y-axis
         """  
-        # Initialize the source term B if not provided
-        # This is done to avoid repeating memory allocation at each call
-        if B is None:   
-            B = np.zeros((s.n_cells*s.n_dim))
-        else:
-            B.fill(0) # Reset the source term By
+        B = np.zeros((s.n_cells*s.n_dim))
 
         # U correction terms
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells            
@@ -504,7 +486,7 @@ class StressStrain2d_block(StressStrain2d):
             start_time = time()
             grad_U = s.grad(U)
 
-            B_c = s.source_correction(grad_U, B_c)
+            B_c = s.source_correction(grad_U)
             output = solver(A, B(), x0=U, M=M) # INNER ITERATIONS
             if isinstance(output, tuple):  # If the solver returns the solution and some statistics
                 U = output[0]
