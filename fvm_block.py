@@ -474,8 +474,8 @@ class StressStrain2d_block(StressStrain2d):
         s.statistics.add('res_norm', [])
         s.statistics.add('inner_iterations', [])
         s.statistics.store(
-            res = 0,
-            res_norm = 0,
+            res = (res := 0),
+            res_norm = (res_norm := 0),
             hist_Ux = Ux, hist_Uy = Uy,
             hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
             hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : B()[s.n_cells:]} 
@@ -504,8 +504,8 @@ class StressStrain2d_block(StressStrain2d):
             
             # Store the statistics
             s.statistics.store(
-                res = residual(A, U, B()),
-                res_norm = residual_norm(A, U, B()),
+                res = (res := residual(A, U, B())),
+                res_norm = (res_norm := residual_norm(A, U, B())),
                 inner_iterations = inner_statistics,
                 hist_Ux = U[:s.n_cells], hist_Uy = U[s.n_cells:],
                 hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
@@ -515,10 +515,10 @@ class StressStrain2d_block(StressStrain2d):
             
             # Print the progress of the iterations
             if apply_grid_correction:
-                pbar.set_postfix_str(f'Normalized residual for unstructured grid correction: {it_res_norm:.2e}')
+                pbar.set_postfix_str(f'Normalized residual for unstructured grid correction: {res_norm:.2e}')
             
             # Check convergence
-            if step>1 and it_res_norm < tol_res_norm:
+            if step>1 and res_norm < tol_res_norm:
                 break
             elif not apply_grid_correction:
                 break
