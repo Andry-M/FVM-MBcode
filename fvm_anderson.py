@@ -32,7 +32,8 @@ class StressStrain2d_Anderson(StressStrain2d):
               early_stopping : bool = False,
               inc_trend_counter_max : int = 1,
               anderson_order : int = 30,
-              relax : float = 1.0):
+              damping : float = 1.,
+              relax : float = 0.):
         """
             Solve the elastic strain-stress problem for the given mesh and boundary conditions 
             using the Finite Volume Method and a segregated algorithm.\n
@@ -47,12 +48,16 @@ class StressStrain2d_Anderson(StressStrain2d):
                 early_stopping (bool, default=False) : flag to enable early stopping
                 inc_trend_counter_max (int, default=1) : maximum number of increasing trends before stopping the iterations
                 anderson_order (int, default=30) : number of previous solutions to use in the Anderson mixing algorithm
-                relax (float, default=1.0) : relaxation factor for the Anderson mixing algorithm
+                damping (float, default=1.) : damping factor for the Anderson mixing algorithm (0: f(x), 1: x)
+                relax (float, default=0.) : relaxation factor for the Anderson mixing algorithm (0: full anderson pred, 1: no anderson pred)
                 
             Returns:
                 Ux (np.array) x-axis displacement field    
                 Uy (np.array) y-axis displacement field
         """
+        if anderson_order < 3:
+            raise ValueError('The Anderson mixing algorithm implemented requires an order greater than 2 for stability purpose')
+        
         ### Initialisation ###
 
         Ux, Uy = s.init_Ux.copy(), s.init_Uy.copy()
@@ -101,8 +106,7 @@ class StressStrain2d_Anderson(StressStrain2d):
             outer_start_time = time()
             
             ## START OF OUTER ITERATION ##
-            lag = 2 # Lag for the Anderson mixing algorithm to avoid using transient solutions
-            if step>2 and (step-lag) % anderson_order == 0: # If the order is reached, use the Anderson mixing algorithm
+            if step > 0 and (step % (anderson_order+1)) == 0: # If the order is reached, use the Anderson mixing algorithm
                 print(f'Step {step} - Anderson mixing algorithm applied')
                 # Compute the error vectors
                 error_x = np.zeros((anderson_order, s.n_cells))
@@ -135,11 +139,14 @@ class StressStrain2d_Anderson(StressStrain2d):
                 Ux = np.zeros(s.n_cells)
                 Uy = np.zeros(s.n_cells)
                 for o in range(anderson_order):
-                    Ux += anderson_coeffs_y[o]*s.statistics.hist_Ux[step-anderson_order+o]
-                    Uy += anderson_coeffs_x[o]*s.statistics.hist_Uy[step-anderson_order+o]
+                    ind = step-anderson_order+o
+                    Ux += anderson_coeffs_x[o]*(damping*s.statistics.hist_Ux[ind] \
+                                                + (1.-damping)*s.statistics.hist_Ux[ind+1])
+                    Uy += anderson_coeffs_y[o]*(damping*s.statistics.hist_Uy[ind] \
+                                                + (1.-damping)*s.statistics.hist_Uy[ind+1])
                 
-                Ux = relax*Ux + (1-relax)*s.statistics.hist_Ux[-1]
-                Uy = relax*Uy + (1-relax)*s.statistics.hist_Uy[-1]
+                Ux = (1-relax)*Ux + relax*s.statistics.hist_Ux[-1]
+                Uy = (1-relax)*Uy + relax*s.statistics.hist_Uy[-1]
                 
                 # Update the source terms
                 grad_Ux = s.grad(Ux)
@@ -237,5 +244,6 @@ class StressStrain2d_Anderson(StressStrain2d):
         # Store the extra statistics
         s.statistics.add('precond', precond.__name__)
         s.statistics.add('precond_args', precond_args)
+        s.statistics.add('anderson', {'order' : anderson_order, 'damping' : damping, 'relax' : relax})
         
         return Ux, Uy
