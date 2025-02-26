@@ -55,8 +55,8 @@ class StressStrain2d_Anderson(StressStrain2d):
                 Ux (np.array) x-axis displacement field    
                 Uy (np.array) y-axis displacement field
         """
-        if anderson_order < 3:
-            raise ValueError('The Anderson mixing algorithm implemented requires an order greater than 2 for stability purpose')
+        if anderson_order < 2:
+            raise ValueError('The Anderson mixing algorithm implemented requires an order greater than 1 for stability purpose')
         
         ### Initialisation ###
 
@@ -97,8 +97,7 @@ class StressStrain2d_Anderson(StressStrain2d):
             on_fly_res_x = 0, on_fly_res_y = 0,
             on_fly_res_norm_x = 0, on_fly_res_norm_y = 0,
             hist_Ux = Ux, hist_Uy = Uy,
-            hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
-            hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()} 
+            hist_Bx = Bx(), hist_By = By()
         )
         
         # Start the iterations
@@ -106,15 +105,20 @@ class StressStrain2d_Anderson(StressStrain2d):
             outer_start_time = time()
             
             ## START OF OUTER ITERATION ##
-            if step > 0 and (step % (anderson_order+1)) == 0: # If the order is reached, use the Anderson mixing algorithm
+            
+            # If the order is reached, use the Anderson mixing algorithm
+            if step > 0 and (step % (anderson_order+1)) == 0: 
                 print(f'Step {step} - Anderson mixing algorithm applied')
+                
                 # Compute the error vectors
                 error_x = np.zeros((anderson_order, s.n_cells))
                 error_y = np.zeros((anderson_order, s.n_cells))
+                
                 for o in range(anderson_order):
                     ind = step-anderson_order+o
                     error_x[o,:] = s.statistics.hist_Ux[ind+1]-s.statistics.hist_Ux[ind]
                     error_y[o,:] = s.statistics.hist_Uy[ind+1]-s.statistics.hist_Uy[ind]
+                    
                 # Compute the projection matrix
                 T_x = np.zeros((anderson_order, anderson_order))
                 T_y = np.zeros((anderson_order, anderson_order))
@@ -122,20 +126,25 @@ class StressStrain2d_Anderson(StressStrain2d):
                     for j in range(i, anderson_order):
                         T_x[i,j] = np.dot(error_x[i], error_x[j])
                         T_y[i,j] = np.dot(error_y[i], error_y[j])
+                        
                 # Normalize the projection matrix
                 T_x = T_x / np.max(T_x)
                 T_y = T_y / np.max(T_y)
+                
+                # Symmetrize the projection matrix
                 for i in range(anderson_order):
                     for j in range(i):
                         T_x[i,j] = T_x[j,i]
                         T_y[i,j] = T_y[j,i]
+                        
                 # Compute the coefficients
+                # Uses constraint optimization for minimization with the constraint sum(coeff) = 1
                 anderson_coeffs_x = np.linalg.solve(T_x, np.ones(anderson_order))
                 anderson_coeffs_x /= np.sum(anderson_coeffs_x)
                 anderson_coeffs_y = np.linalg.solve(T_y, np.ones(anderson_order))
                 anderson_coeffs_y /= np.sum(anderson_coeffs_y)
                 
-                # Compute the new displacement components
+                # Linearly combine the previous iterations
                 Ux = np.zeros(s.n_cells)
                 Uy = np.zeros(s.n_cells)
                 for o in range(anderson_order):
@@ -145,6 +154,7 @@ class StressStrain2d_Anderson(StressStrain2d):
                     Uy += anderson_coeffs_y[o]*(damping*s.statistics.hist_Uy[ind] \
                                                 + (1.-damping)*s.statistics.hist_Uy[ind+1])
                 
+                # Insert the new solution with relaxation
                 Ux = (1-relax)*Ux + relax*s.statistics.hist_Ux[-1]
                 Uy = (1-relax)*Uy + relax*s.statistics.hist_Uy[-1]
                 
@@ -156,7 +166,8 @@ class StressStrain2d_Anderson(StressStrain2d):
                 Bx_t = s.source_transverse_x(grad_Uy)
                 #By_t = s.source_transverse_y(grad_Ux) # Re-updated later, before use
             
-            else:
+            else: # Normal iteration
+                
                 # Solve the system of equations for x-axis
                 output = solver(Ax, Bx(), x0=Ux, M=Mx) # INNER ITERATIONS
                 if isinstance(output, tuple):  # If the solver returns the solution and some statistics
@@ -194,8 +205,8 @@ class StressStrain2d_Anderson(StressStrain2d):
                 on_fly_res_x = residual(Ax, Ux, Bx()), on_fly_res_y = residual(Ay, Uy, By()),
                 on_fly_res_norm_x = residual_norm(Ax, Ux, Bx()), on_fly_res_norm_y = residual_norm(Ay, Uy, By()),
                 hist_Ux = Ux, hist_Uy = Uy,
-                hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
-                hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()},
+                hist_Bx = Bx(),
+                hist_By = By(),
                 outer_iterations = {'time' : outer_end_time - outer_start_time},
                 inner_iterations = {'x' : inner_statistics_x, 'y' : inner_statistics_y}
             )
