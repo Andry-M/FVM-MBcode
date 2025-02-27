@@ -728,9 +728,3 @@ class StressStrain2d():
             Sxy[i] = s.mu(centroid[0], centroid[1]) * (grad_Ux[i][1] + grad_Uy[i][0])
         
         return Sxx, Syy, Sxy
-
-
-# Imports of the extensions
-from mb_code.fvm_anderson import *
-from mb_code.fvm_ml import *
-from mb_code.fvm_block import *
