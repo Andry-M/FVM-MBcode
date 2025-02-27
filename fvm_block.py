@@ -453,9 +453,7 @@ class StressStrain2d_block(StressStrain2d):
         
         if not apply_grid_correction:
             max_iter = 1
-        
-        init_time = time() # Start the timer for the total duration of the solver
-        
+                
         # Construct the stiffness matrix and the body force source term
         A = s.stiffness()
         
@@ -477,8 +475,8 @@ class StressStrain2d_block(StressStrain2d):
             res = (res := 0),
             res_norm = (res_norm := 0),
             hist_Ux = Ux, hist_Uy = Uy,
-            hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
-            hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : B()[s.n_cells:]} 
+            hist_Bx = B()[:s.n_cells],
+            hist_By = B()[s.n_cells:] 
         )
 
         # GRID CORRECTION ITERATIONS
@@ -508,8 +506,8 @@ class StressStrain2d_block(StressStrain2d):
                 res_norm = (res_norm := residual_norm(A, U, B())),
                 inner_iterations = inner_statistics,
                 hist_Ux = U[:s.n_cells], hist_Uy = U[s.n_cells:],
-                hist_Bx = {'boundary' : B_b[:s.n_cells], 'force' : B_f[:s.n_cells], 'correction' : B_c[:s.n_cells], 'all' : B()[:s.n_cells]},
-                hist_By = {'boundary' : B_b[s.n_cells:], 'force' : B_f[s.n_cells:], 'correction' : B_c[s.n_cells:], 'all' : B()[s.n_cells:]}, 
+                hist_Bx = B()[:s.n_cells],
+                hist_By = B()[s.n_cells:], 
                 outer_iterations = {'time' : end_time-start_time},
             )
             
