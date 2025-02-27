@@ -10,6 +10,76 @@
 # -----------------------------------------------------------------------------
 
 from mb_code.fvm import *
+import numpy as np
+
+def __anderson__mixing__(hist, order, damping, relax):
+    """
+        Anderson mixing algorithm for the solution of the linear system of equations
+        using the previous solutions in the history of the iterations.
+        
+        Parameters:
+            hist (np.array, shape=(n_vars, n_hist, n_cells) or (n_hist, n_cells)) : history of iterations
+            order (int) : number of previous solutions to use in the mixing algorithm
+            damping (float) : damping factor for the Anderson mixing algorithm (0: f(x), 1: x)
+            relax (float) : relaxation factor for the Anderson mixing algorithm (0: full anderson pred, 1: no anderson pred)
+            
+        Returns:
+            pred (np.array) : predicted solution
+    """
+    # Compute the error vectors
+    hist = np.asarray(hist) # Convert to numpy array
+    if len(hist.shape) == 2: # If only one variable is considered
+        n_vars = 1
+        n_cells = hist.shape[1]
+        out_shape = hist.shape[1:]
+    elif len(hist.shape) == 3:
+        n_vars = hist.shape[0]
+        n_cells = hist.shape[2]
+        out_shape = hist.shape[0:3:2] # (n_vars, n_cells)
+    
+    hist = hist.reshape(n_vars, -1, n_cells) # Add the first dimension if not present
+    
+    T = np.zeros((order, order)) # Projection matrix
+    for v in range(n_vars):
+        Tv = np.zeros((order, order)) # Variable projection matrix
+        errorv = np.zeros((order, n_cells)) # Variable error vector
+        for o in range(order):
+            ind = -1-order+o
+            errorv[o,:] += hist[v, ind+1] - hist[v, ind]
+        # Compute the projection matrix
+        for i in range(order):
+            for j in range(i, order):
+                Tv[i,j] = np.dot(errorv[i], errorv[j])
+        # Normalize the projection matrix
+        Tv /= np.mean(Tv) 
+        T += Tv  
+    
+    # Normalize the projection matrix
+    T = T / np.mean(T)
+    
+    # Symmetrize the projection matrix
+    for i in range(order):
+        for j in range(i):
+            T[i,j] = T[j,i]
+            
+    # Compute the coefficients
+    # Uses constraint optimization for minimization with the constraint sum(coeff) = 1
+    anderson_coeffs = np.linalg.solve(T, np.ones(order))
+    anderson_coeffs /= np.sum(anderson_coeffs)
+    
+    # Linearly combine the previous iterations
+    pred = np.zeros((n_vars, n_cells))
+    for v in range(n_vars):
+        for o in range(order):
+            ind = -1-order+o
+            pred[v] += anderson_coeffs[o]*(damping*hist[v, ind] \
+                                        + (1.-damping)*hist[v, ind+1])
+    
+    # Insert the new solution with relaxation
+    pred = (1-relax)*pred + relax*hist[:, -1, ...]
+    pred = pred.reshape(out_shape)
+    
+    return pred
 
 class StressStrain2d_Anderson(StressStrain2d):
     def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable,
@@ -110,53 +180,11 @@ class StressStrain2d_Anderson(StressStrain2d):
             if step > 0 and (step % (anderson_order+1)) == 0: 
                 print(f'Step {step} - Anderson mixing algorithm applied')
                 
-                # Compute the error vectors
-                error_x = np.zeros((anderson_order, s.n_cells))
-                error_y = np.zeros((anderson_order, s.n_cells))
+                Ux = __anderson__mixing__(s.statistics.hist_Ux, anderson_order, damping, relax)
+                Uy = __anderson__mixing__(s.statistics.hist_Uy, anderson_order, damping, relax)
                 
-                for o in range(anderson_order):
-                    ind = step-anderson_order+o
-                    error_x[o,:] = s.statistics.hist_Ux[ind+1]-s.statistics.hist_Ux[ind]
-                    error_y[o,:] = s.statistics.hist_Uy[ind+1]-s.statistics.hist_Uy[ind]
-                    
-                # Compute the projection matrix
-                T_x = np.zeros((anderson_order, anderson_order))
-                T_y = np.zeros((anderson_order, anderson_order))
-                for i in range(anderson_order):
-                    for j in range(i, anderson_order):
-                        T_x[i,j] = np.dot(error_x[i], error_x[j])
-                        T_y[i,j] = np.dot(error_y[i], error_y[j])
-                        
-                # Normalize the projection matrix
-                T_x = T_x / np.max(T_x)
-                T_y = T_y / np.max(T_y)
-                
-                # Symmetrize the projection matrix
-                for i in range(anderson_order):
-                    for j in range(i):
-                        T_x[i,j] = T_x[j,i]
-                        T_y[i,j] = T_y[j,i]
-                        
-                # Compute the coefficients
-                # Uses constraint optimization for minimization with the constraint sum(coeff) = 1
-                anderson_coeffs_x = np.linalg.solve(T_x, np.ones(anderson_order))
-                anderson_coeffs_x /= np.sum(anderson_coeffs_x)
-                anderson_coeffs_y = np.linalg.solve(T_y, np.ones(anderson_order))
-                anderson_coeffs_y /= np.sum(anderson_coeffs_y)
-                
-                # Linearly combine the previous iterations
-                Ux = np.zeros(s.n_cells)
-                Uy = np.zeros(s.n_cells)
-                for o in range(anderson_order):
-                    ind = step-anderson_order+o
-                    Ux += anderson_coeffs_x[o]*(damping*s.statistics.hist_Ux[ind] \
-                                                + (1.-damping)*s.statistics.hist_Ux[ind+1])
-                    Uy += anderson_coeffs_y[o]*(damping*s.statistics.hist_Uy[ind] \
-                                                + (1.-damping)*s.statistics.hist_Uy[ind+1])
-                
-                # Insert the new solution with relaxation
-                Ux = (1-relax)*Ux + relax*s.statistics.hist_Ux[-1]
-                Uy = (1-relax)*Uy + relax*s.statistics.hist_Uy[-1]
+                #Ux, Uy = __anderson__mixing__([s.statistics.hist_Ux, s.statistics.hist_Uy],
+                #                              anderson_order, damping, relax)
                 
                 # Update the source terms
                 grad_Ux = s.grad(Ux)
@@ -333,115 +361,116 @@ class StressStrain2d_Anderson(StressStrain2d):
             hist_Bx = Bx(), hist_By = By()
         )
         anderson_order_fixed = False
+
         # Start the iterations
         for step in (pbar := tqdm(range(int(max_iter)))):
             outer_start_time = time()
-            
             ## START OF OUTER ITERATION ##
             # If the order is reached, use the Anderson mixing algorithm
             if step > 5: 
-                print(f'Step {step} - Anderson mixing algorithm applied')
                 if not anderson_order_fixed:
                     anderson_order = step - 1
-                # Compute the error vectors
-                error_x = np.zeros((anderson_order, s.n_cells))
-                error_y = np.zeros((anderson_order, s.n_cells))
-                
-                for o in range(anderson_order):
-                    ind = step-anderson_order+o
-                    error_x[o,:] = s.statistics.hist_Ux[ind+1]-s.statistics.hist_Ux[ind]
-                    error_y[o,:] = s.statistics.hist_Uy[ind+1]-s.statistics.hist_Uy[ind]
+                if ((step % (anderson_order+1)) == 0):
+                    # Compute the error vectors
+                    error_x = np.zeros((anderson_order, s.n_cells))
+                    error_y = np.zeros((anderson_order, s.n_cells))
                     
-                # Compute the projection matrix
-                T_x = np.zeros((anderson_order, anderson_order))
-                T_y = np.zeros((anderson_order, anderson_order))
-                for i in range(anderson_order):
-                    for j in range(i, anderson_order):
-                        T_x[i,j] = np.dot(error_x[i], error_x[j])
-                        T_y[i,j] = np.dot(error_y[i], error_y[j])
+                    for o in range(anderson_order):
+                        ind = step-anderson_order+o
+                        error_x[o,:] = s.statistics.hist_Ux[ind+1]-s.statistics.hist_Ux[ind]
+                        error_y[o,:] = s.statistics.hist_Uy[ind+1]-s.statistics.hist_Uy[ind]
                         
-                # Normalize the projection matrix
-                T_x = T_x / np.max(T_x)
-                T_y = T_y / np.max(T_y)
-                
-                # Symmetrize the projection matrix
-                for i in range(anderson_order):
-                    for j in range(i):
-                        T_x[i,j] = T_x[j,i]
-                        T_y[i,j] = T_y[j,i]
-                        
-                # Compute the coefficients
-                # Uses constraint optimization for minimization with the constraint sum(coeff) = 1
-                anderson_coeffs_x = np.linalg.solve(T_x, np.ones(anderson_order))
-                anderson_coeffs_x /= np.sum(anderson_coeffs_x)
-                anderson_coeffs_y = np.linalg.solve(T_y, np.ones(anderson_order))
-                anderson_coeffs_y /= np.sum(anderson_coeffs_y)
-                
-                # Linearly combine the previous iterations
-                Ux_and = np.zeros(s.n_cells)
-                Uy_and = np.zeros(s.n_cells)
-                for o in range(anderson_order):
-                    ind = step-anderson_order+o
-                    Ux_and += anderson_coeffs_x[o]*(damping*s.statistics.hist_Ux[ind] \
-                                                + (1.-damping)*s.statistics.hist_Ux[ind+1])
-                    Uy_and += anderson_coeffs_y[o]*(damping*s.statistics.hist_Uy[ind] \
-                                                + (1.-damping)*s.statistics.hist_Uy[ind+1])
-                
-                # Insert the new solution with relaxation
-                Ux_and = (1-relax)*Ux_and + relax*s.statistics.hist_Ux[-1]
-                Uy_and = (1-relax)*Uy_and + relax*s.statistics.hist_Uy[-1]
-                
+                    # Compute the projection matrix
+                    T_x = np.zeros((anderson_order, anderson_order))
+                    T_y = np.zeros((anderson_order, anderson_order))
+                    for i in range(anderson_order):
+                        for j in range(i, anderson_order):
+                            T_x[i,j] = np.dot(error_x[i], error_x[j])
+                            T_y[i,j] = np.dot(error_y[i], error_y[j])
+                            
+                    # Normalize the projection matrix
+                    T_x = T_x / np.max(T_x)
+                    T_y = T_y / np.max(T_y)
+                    
+                    # Symmetrize the projection matrix
+                    for i in range(anderson_order):
+                        for j in range(i):
+                            T_x[i,j] = T_x[j,i]
+                            T_y[i,j] = T_y[j,i]
+                            
+                    # Compute the coefficients
+                    # Uses constraint optimization for minimization with the constraint sum(coeff) = 1
+                    anderson_coeffs_x = np.linalg.solve(T_x, np.ones(anderson_order))
+                    anderson_coeffs_x /= np.sum(anderson_coeffs_x)
+                    anderson_coeffs_y = np.linalg.solve(T_y, np.ones(anderson_order))
+                    anderson_coeffs_y /= np.sum(anderson_coeffs_y)
+                    
+                    # Linearly combine the previous iterations
+                    Ux_and = np.zeros(s.n_cells)
+                    Uy_and = np.zeros(s.n_cells)
+                    for o in range(anderson_order):
+                        ind = step-anderson_order+o
+                        Ux_and += anderson_coeffs_x[o]*(damping*s.statistics.hist_Ux[ind] \
+                                                    + (1.-damping)*s.statistics.hist_Ux[ind+1])
+                        Uy_and += anderson_coeffs_y[o]*(damping*s.statistics.hist_Uy[ind] \
+                                                    + (1.-damping)*s.statistics.hist_Uy[ind+1])
+                    
+                    # Insert the new solution with relaxation
+                    Ux_and = (1-relax)*Ux_and + relax*s.statistics.hist_Ux[-1]
+                    Uy_and = (1-relax)*Uy_and + relax*s.statistics.hist_Uy[-1]
+                    
+                    # Update the source terms
+                    grad_Ux_and = s.grad(Ux_and)
+                    grad_Uy_and = s.grad(Uy_and)
+                    Bx_c_and = s.source_correction_x(grad_Ux_and)
+                    By_c_and = s.source_correction_y(grad_Uy_and)
+                    Bx_t_and = s.source_transverse_x(grad_Uy_and)
+                    By_t_and = s.source_transverse_y(grad_Ux_and)
+                    
+                    # Compute the residuals
+                    on_fly_res_norm_x_and = residual_norm(Ax, Ux_and, Bx_c_and+Bx_t_and+Bx_f+Bx_b)
+                    on_fly_res_norm_y_and = residual_norm(Ay, Uy_and, By_c_and+By_t_and+By_t+By_f+By_b)        
+                    
+                    if anderson_order_fixed or (on_fly_res_norm_x_and < s.statistics.on_fly_res_norm_x[-1] or on_fly_res_norm_y_and < s.statistics.on_fly_res_norm_y[-1]):
+                        Ux = Ux_and
+                        Uy = Uy_and
+                        grad_Ux = grad_Ux_and
+                        grad_Uy = grad_Uy_and
+                        Bx_c = Bx_c_and
+                        By_c = By_c_and
+                        Bx_t = Bx_t_and
+                        By_t = By_t_and
+                        anderson_order_fixed = True
+                        print('Anderson mixing algorithm accepted - Step', step)
+            
+            if not anderson_order_fixed or (step % (anderson_order+1)) != 0:
+                # Normal iteration
+                # Solve the system of equations for x-axis
+                output = solver(Ax, Bx(), x0=Ux, M=Mx) # INNER ITERATIONS
+                if isinstance(output, tuple):  # If the solver returns the solution and some statistics
+                    Ux = output[0]
+                    inner_statistics_x = output[1]
+                else:
+                    Ux = output
+                    inner_statistics_x = None
+                grad_Ux = s.grad(Ux)
                 # Update the source terms
-                grad_Ux_and = s.grad(Ux_and)
-                grad_Uy_and = s.grad(Uy_and)
-                Bx_c_and = s.source_correction_x(grad_Ux_and)
-                By_c_and = s.source_correction_y(grad_Uy_and)
-                Bx_t_and = s.source_transverse_x(grad_Uy_and)
-                By_t_and = s.source_transverse_y(grad_Ux_and)
+                By_t = s.source_transverse_y(grad_Ux)
+                Bx_c = s.source_correction_x(grad_Ux)
+                            
+                # Solve the system of equations for y-axis
+                output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
+                if  isinstance(output, tuple): # If the solver returns the solution and some statistics
+                    Uy = output[0]
+                    inner_statistics_y = output[1]
+                else: 
+                    Uy = output
+                    inner_statistics_y = None
+                grad_Uy = s.grad(Uy)
+                # Update the source terms
+                Bx_t = s.source_transverse_x(grad_Uy)
+                By_c = s.source_correction_y(grad_Uy)
                 
-                # Compute the residuals
-                on_fly_res_norm_x_and = residual_norm(Ax, Ux_and, Bx_c_and+Bx_t_and+Bx_f+Bx_b)
-                on_fly_res_norm_y_and = residual_norm(Ay, Uy_and, By_c_and+By_t_and+By_t+By_f+By_b)        
-                
-                if on_fly_res_norm_x_and < s.statistics.on_fly_res_norm_x[-1] and on_fly_res_norm_y_and < s.statistics.on_fly_res_norm_y[-1]:
-                    Ux = Ux_and
-                    Uy = Uy_and
-                    grad_Ux = grad_Ux_and
-                    grad_Uy = grad_Uy_and
-                    Bx_c = Bx_c_and
-                    By_c = By_c_and
-                    Bx_t = Bx_t_and
-                    anderson_order = step - 1
-                    anderson_order_fixed = True
-                    print('Anderson mixing algorithm accepted - Step', step)
-            
-            # Normal iteration
-            # Solve the system of equations for x-axis
-            output = solver(Ax, Bx(), x0=Ux, M=Mx) # INNER ITERATIONS
-            if isinstance(output, tuple):  # If the solver returns the solution and some statistics
-                Ux = output[0]
-                inner_statistics_x = output[1]
-            else:
-                Ux = output
-                inner_statistics_x = None
-            grad_Ux = s.grad(Ux)
-            # Update the source terms
-            By_t = s.source_transverse_y(grad_Ux)
-            Bx_c = s.source_correction_x(grad_Ux)
-                        
-            # Solve the system of equations for y-axis
-            output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
-            if  isinstance(output, tuple): # If the solver returns the solution and some statistics
-                Uy = output[0]
-                inner_statistics_y = output[1]
-            else: 
-                Uy = output
-                inner_statistics_y = None
-            grad_Uy = s.grad(Uy)
-            # Update the source terms
-            Bx_t = s.source_transverse_x(grad_Uy)
-            By_c = s.source_correction_y(grad_Uy)
-            
             ## END OF OUTER ITERATION ##
             
             outer_end_time = time()
