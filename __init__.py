@@ -11,6 +11,7 @@
 __all__ = ["fvm",
            "fvm_ml", 
            "fvm_block",
+           "fvm_anderson",
            "machine_learning",
            "inner_solver",
            "utils",
