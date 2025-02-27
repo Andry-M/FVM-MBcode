@@ -729,3 +729,6 @@ class StressStrain2d():
         
         return Sxx, Syy, Sxy
 
+from mb_code.fvm_anderson import *
+from mb_code.fvm_ml import *
+from mb_code.fvm_block import *
