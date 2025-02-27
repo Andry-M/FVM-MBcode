@@ -56,4 +56,4 @@ def scipy_sparse_gmres(A, b, **kwargs):
 def scipy_sparse_spsolve(A, b, **kwargs):
     from scipy.sparse.linalg import spsolve
     U = spsolve(A, b)
-    return U, {'info' : 'direct solver', 'iterations': 1}
+    return U, {'info' : 0, 'iterations': 1}
