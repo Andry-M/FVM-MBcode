@@ -601,8 +601,8 @@ class StressStrain2d():
             on_fly_res_x = 0, on_fly_res_y = 0,
             on_fly_res_norm_x = 0, on_fly_res_norm_y = 0,
             hist_Ux = Ux, hist_Uy = Uy,
-            hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
-            hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()} 
+            hist_Bx = Bx(),
+            hist_By = By() 
         )
         
         # Start the iterations
@@ -648,8 +648,8 @@ class StressStrain2d():
                 on_fly_res_x = residual(Ax, Ux, Bx()), on_fly_res_y = residual(Ay, Uy, By()),
                 on_fly_res_norm_x = residual_norm(Ax, Ux, Bx()), on_fly_res_norm_y = residual_norm(Ay, Uy, By()),
                 hist_Ux = Ux, hist_Uy = Uy,
-                hist_Bx = {'transverse' : Bx_t, 'boundary' : Bx_b, 'force' : Bx_f, 'correction' : Bx_c, 'all' : Bx()},
-                hist_By = {'transverse' : By_t, 'boundary' : By_b, 'force' : By_f, 'correction' : By_c, 'all' : By()},
+                hist_Bx = Bx(),
+                hist_By = By(),
                 outer_iterations = {'time' : outer_end_time - outer_start_time},
                 inner_iterations = {'x' : inner_statistics_x, 'y' : inner_statistics_y}
             )
