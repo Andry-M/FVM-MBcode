@@ -43,14 +43,14 @@ def scipy_sparse_cg(A, b, **kwargs):
     U, info, iters = __solver_core(cg, A, b, x0, M, rtol, atol, maxiter)
     return U, {'info' : info, 'iterations': iters}
 
-def scipy_sparse_gmres(A, b, **kwargs):
-    from scipy.sparse.linalg import gmres
+def scipy_sparse_lgmres(A, b, **kwargs):
+    from scipy.sparse.linalg import lgmres
     x0 = kwargs.get('x0', None)
     M = kwargs.get('M', None)
     rtol = kwargs.get('rtol', RTOL)
     atol = kwargs.get('atol', ATOL)
     maxiter = kwargs.get('maxiter', MAXITER)
-    U, info, iters = __solver_core(gmres, A, b, x0, M, rtol, atol, maxiter)
+    U, info, iters = __solver_core(lgmres, A, b, x0, M, rtol, atol, maxiter)
     return U, {'info' : info, 'iterations': iters}
 
 def scipy_sparse_spsolve(A, b, **kwargs):
