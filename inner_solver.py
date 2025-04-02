@@ -57,3 +57,8 @@ def scipy_sparse_spsolve(A, b, **kwargs):
     from scipy.sparse.linalg import spsolve
     U = spsolve(A, b)
     return U, {'info' : 0, 'iterations': 1}
+
+def atol_ratio_scheduler(r : float):
+    def scheduler(res_x, res_y) -> float:
+        return r * min(res_x, res_y)
+    return scheduler
