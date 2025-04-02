@@ -317,7 +317,7 @@ class Mesh2d():
         plt.ylabel('Y axis')
         plt.title('Mesh of the domain')
         plt.axis('equal')
-        plt.legend(loc='center right')
+        plt.legend(loc='best')
         
         # Save the plot
         if filename is not None:
