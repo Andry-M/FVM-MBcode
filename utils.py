@@ -56,17 +56,48 @@ def residual_norm(A, U, B) -> float:
         return None # Avoid division by zero
     else:
         return num/den
+
+def residual_map(A, U, B) -> float:
+    """
+        Calculate the residual map of the linear system AU = B.\n
+        The residual is defined as the absolute difference between AU and B.
+        
+        Parameters:
+            - A (np.array) : Matrix A
+            - U (np.array) : Solution vector U
+            - B (np.array) : Right-hand side vector B
+    """
+    return A @ U - B
+
+def residual_norm_map(A, U, B) -> float:
+    """
+        Calculate the normalized residual of the linear system AU = B as defined in OpenFOAM.\n
+        The normalized residual map is defined as the absolute difference between AU and B
+        divided by the sum of |AU - A x mean(U)| + |B - A x mean(U)|.
+        
+        Parameters:
+            - A (np.array) : Matrix A
+            - U (np.array) : Solution vector U
+            - B (np.array) : Right-hand side vector B
+    """
+    num = A @ U - B
+    Um = np.ones_like(U) * U.mean()
+    den = np.linalg.norm(A @ U - A @ Um,1) + np.linalg.norm(B - A @ Um,1)
+    if den==0:
+        return num # Avoid division by zero
+    else:
+        return num/den
     
-def residual_map(Ux, Uy, Ux_ref, Uy_ref) -> np.array:
+def diff_map(U, U_ref) -> np.array:
     """
         Calculate the residual map of the displacement field U with respect to a reference field U_ref.\n
-        The residual map is defined as the L2 norm of the difference between U and U_ref.
+        The residual map is defined as the absolute difference between U and U_ref.
         
         Parameters:
             - U (np.array) : Displacement field U
             - U_ref (np.array) : Reference displacement field U_ref
     """
-    return np.linalg.norm(np.array([Ux, Uy]) - np.array([Ux_ref, Uy_ref]), 2, axis=0)    
+    return U - U_ref    
 
 @multimethod  
 def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename = None):
