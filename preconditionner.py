@@ -28,6 +28,29 @@ def spilu(A, **kwargs):
     linear_operator = LinearOperator(A.shape, superLU.solve)
     return linear_operator
 
+def ilu(A, **kwargs):
+    """
+        Incomplete LU factorization with fill-in.
+        This is a wrapper for the inverse of ilupp.ILUTPreconditioner.
+        
+        Parameters:
+            - A (scipy.sparse matrix): The matrix to be factorized.
+            - kwargs (dict): Additional keyword arguments for the factorization.
+                - fill_in (int): The fill in for the factorization (number of non-zeros per column). Default is 0.
+                - threshold (float): Entries with a relative magnitude less than this are dropped. Default is 0.
+    """
+    from ilupp import ILUTPreconditioner
+    add_fill_in = kwargs.get('fill_in', 100) # Zero fill-in is the default value in ilupp
+    threshold = kwargs.get('threshold', 0.1) # Default value is 0 in ilupp
+    prec = ILUTPreconditioner(A, add_fill_in=add_fill_in, threshold=threshold)
+    L, U = prec.factors()
+    def solve(x):
+        y = sps.linalg.spsolve_triangular(L, x, lower=True)   # Solve L y1 = x
+        y = sps.linalg.spsolve_triangular(U, y, lower=False)  # Solve U y = y1
+        return y
+    linear_operator = sps.linalg.LinearOperator(A.shape, matvec=solve)
+    return linear_operator
+
 def icholesky(A, **kwargs):
     """
         Incomplete Cholesky factorization with fill-in.
