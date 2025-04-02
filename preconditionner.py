@@ -36,7 +36,7 @@ def ilu(A, **kwargs):
         Parameters:
             - A (scipy.sparse matrix): The matrix to be factorized.
             - kwargs (dict): Additional keyword arguments for the factorization.
-                - fill_in (int): The fill in for the factorization (number of non-zeros per column). Default is 0.
+                - fill_in (int): The fill in for the factorization (number of non-zeros per row). Default is 0.
                 - threshold (float): Entries with a relative magnitude less than this are dropped. Default is 0.
     """
     from ilupp import ILUTPreconditioner
