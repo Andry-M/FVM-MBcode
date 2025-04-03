@@ -40,9 +40,9 @@ def ilu(A, **kwargs):
                 - threshold (float): Entries with a relative magnitude less than this are dropped. Default is 0.
     """
     from ilupp import ILUTPreconditioner
-    add_fill_in = kwargs.get('fill_in', 100) # Zero fill-in is the default value in ilupp
+    fill_in = kwargs.get('fill_in', 100) # Zero fill-in is the default value in ilupp
     threshold = kwargs.get('threshold', 0.1) # Default value is 0 in ilupp
-    prec = ILUTPreconditioner(A, add_fill_in=add_fill_in, threshold=threshold)
+    prec = ILUTPreconditioner(A, fill_in=fill_in, threshold=threshold)
     L, U = prec.factors()
     def solve(x):
         y = sps.linalg.spsolve_triangular(L, x, lower=True)   # Solve L y1 = x
