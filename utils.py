@@ -90,14 +90,14 @@ def residual_norm_map(A, U, B) -> float:
     
 def diff_map(U, U_ref) -> np.array:
     """
-        Calculate the residual map of the displacement field U with respect to a reference field U_ref.\n
-        The residual map is defined as the absolute difference between U and U_ref.
+        Calculate the difference map of the displacement field U with respect to a reference field U_ref.\n
+        The map is defined as the absolute difference between U and U_ref.
         
         Parameters:
             - U (np.array) : Displacement field U
             - U_ref (np.array) : Reference displacement field U_ref
     """
-    return U - U_ref    
+    return np.asarray(U) - np.asarray(U_ref)
 
 @multimethod  
 def plot_history_fvm(trend : dict, res : dict, res_norm : dict, filename = None):
