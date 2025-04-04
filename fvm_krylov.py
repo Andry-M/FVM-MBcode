@@ -36,7 +36,7 @@ class StressStrain2d_Krylov(StressStrain2d):
               before_nk_niter : int = 0,
               source_direct_update : bool = False,
               nk_residual : str = 'fix-point',
-              nk_res_tol : float = 1e-10,
+              nk_res_rtol : float = 1e-10,
               nk_method : str = 'lgmres',
               nk_precond : str = ''):
         """
@@ -55,7 +55,7 @@ class StressStrain2d_Krylov(StressStrain2d):
                 before_nk_niter (int, default=0) : number of Picard iterations before the Newton-Krylov method
                 source_direct_update (bool, default=False) : flag to enable direct update of the source term during Picard iteration
                 nk_residual (str, default='fix-point') : type of residual for the Newton-Krylov method among ('fix-point', 'res-update', 'res-noupdate', 'res-norm-update', 'res-norm-noupdate', 'div-stress-s4f')
-                nk_res_tol (float, default=1e-10) : tolerance for the Newton-Krylov method (max-norm of the nk_residual)
+                nk_res_rtol (float, default=1e-10) : relative tolerance for the Newton-Krylov method (max-norm of the nk_residual)
                 nk_method (str, default='lgmres') : method for the Newton-Krylov method among ('lgmres', 'gmres', 'bicgstab', 'cgs')
                 nk_precond (str, default='') : preconditioner for the Newton-Krylov method among ('broyden', 'seg', '')    
                 
@@ -439,7 +439,7 @@ class StressStrain2d_Krylov(StressStrain2d):
         if nk_precond == 'broyden':
             jac = BroydenFirst()
             U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    inner_M=InverseJacobian(jac), method=nk_method, f_tol=nk_res_tol,
+                                    inner_M=InverseJacobian(jac), method=nk_method, f_rtol=nk_res_rtol,
                                     callback=callback)
         elif nk_precond == 'seg':
             # Construct the segregated algorithm matrix for the preconditioner
@@ -449,11 +449,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             # Use the same preconditionner as for the segregated algorithm
             M = precond(sps.csc_matrix(A), **precond_args) 
             U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    method = nk_method, inner_M=M, f_rtol=nk_res_tol,
+                                    method = nk_method, inner_M=M, f_rtol=nk_res_rtol,
                                     callback=callback)
         elif nk_precond == '':
             U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    method = nk_method, f_rtol=nk_res_tol,
+                                    method = nk_method, f_rtol=nk_res_rtol,
                                     callback=callback)
         else:
             raise ValueError('Unknown preconditioner')
