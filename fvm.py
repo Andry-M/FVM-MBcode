@@ -12,8 +12,8 @@
 from mb_code.mesher import *
 from mb_code.utils import *
 from mb_code.inner_solver import scipy_sparse_spsolve
-from mb_code.parameters import DTYPE
 from mb_code import inner_solver, parameters
+from mb_code.parameters import DTYPE
 
 # Libraries importation
 import numpy as np                # Array manipulation
@@ -133,7 +133,7 @@ class StressStrain2d():
                 coeffx = area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) / proj_distance * normx * normx 
                 Ax[i,i] += coeffx
                 ### y-axis contribution
-                coeffy = area * s.mu(xm, ym) / proj_distance * normy * normy
+                coeffy = area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) / proj_distance * normy * normy
                 Ax[i,i] += coeffy
                 ## Off-diagonal
                 Ax[i,j] -= coeffx + coeffy
@@ -144,7 +144,7 @@ class StressStrain2d():
                 coeffy = area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) / proj_distance * normy * normy
                 Ay[i,i] += coeffy
                 ### x-axis contribution
-                coeffx = area * s.mu(xm, ym) / proj_distance * normx * normx
+                coeffx = area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) / proj_distance * normx * normx
                 Ay[i,i] += coeffx
                 ## Off-diagonal
                 Ay[i,j] -= coeffx + coeffy
@@ -169,7 +169,7 @@ class StressStrain2d():
                     ## x-axis contribution
                     Ax[i,i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normx * normx
                     ## y-axis contribution
-                    Ax[i,i] += area * s.mu(xb, yb) / proj_distance * normy * normy
+                    Ax[i,i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normy * normy
                     ## No off-diagonal contribution as it is fixed by the Dirichlet condition in the source vector
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # Stress boundary conditions do not contribute to the stiffness matrix
@@ -181,7 +181,7 @@ class StressStrain2d():
                     ## y-axis contribution
                     Ay[i,i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normy * normy
                     ## x-axis contribution
-                    Ay[i,i] += area * s.mu(xb, yb) / proj_distance * normx * normx
+                    Ay[i,i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normx * normx
                     ## No off-diagonal contribution as it is fixed by the Dirichlet condition in the source vector
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # Stress boundary conditions do not contribute to the stiffness matrix
@@ -231,7 +231,7 @@ class StressStrain2d():
         
         return grad_U       
     
-    def source_transverse_x(s, grad_Uy : np.array = None):
+    def source_transverse_x(s, grad_Ux : np.array = None, grad_Uy : np.array = None):
         """
             Calculate the source term for the transverse contribution for the x-axis component.
                         
@@ -252,12 +252,14 @@ class StressStrain2d():
                 area = face['area'] # Length of the face
                 weight = face['weight'] # Weight of the cell in the gradient calculation
                 
+                grad_Ux_ij = weight * grad_Ux[i] + (1-weight) * grad_Ux[j] # Weighted gradient of the x-axis displacement field
                 grad_Uy_ij = weight * grad_Uy[i] + (1-weight) * grad_Uy[j] # Weighted gradient of the x-axis displacement field
                 
                 # x-axis oriented face
                 Bx[i] += area * s.lambda_(xm, ym) * grad_Uy_ij[1] * normx
                 # y-axis oriented face
                 Bx[i] += area * s.mu(xm, ym) * grad_Uy_ij[0] * normy
+                Bx[i] -= area * (s.mu(xm, ym)+s.lambda_(xm, ym)) * grad_Ux_ij[1] * normy
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -274,10 +276,11 @@ class StressStrain2d():
                     Bx[i] += area * normx * s.lambda_(xb, yb) * grad_Uy[i][1]
                     # y-axis oriented face
                     Bx[i] += area * normy * s.mu(xb, yb) * grad_Uy[i][0]
+                    Bx[i] -= area * (s.mu(xb, yb)+s.lambda_(xb, yb)) * grad_Ux[i][1] * normy
         
         return Bx
     
-    def source_transverse_y(s, grad_Ux : np.array = None):
+    def source_transverse_y(s, grad_Ux : np.array = None, grad_Uy : np.array = None):
         """
             Calculate the source term for the transverse contribution for the y-axis component.
                         
@@ -299,11 +302,13 @@ class StressStrain2d():
                 weight = face['weight'] # Weight of the cell in the gradient calculation
 
                 grad_Ux_ij = weight * grad_Ux[i] + (1-weight) * grad_Ux[j] # Weighted gradient of the x-axis displacement field
+                grad_Uy_ij = weight * grad_Uy[i] + (1-weight) * grad_Uy[j] # Weighted gradient of the y-axis displacement field
                     
                 # y-axis oriented face
                 By[i] += area * s.lambda_(xm, ym) * grad_Ux_ij[0] * normy
                 # x-axis oriented face
                 By[i] += area * s.mu(xm, ym) * grad_Ux_ij[1] * normx
+                By[i] -= area * (s.mu(xm, ym)+s.lambda_(xm, ym)) * grad_Uy_ij[0] * normx
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -320,6 +325,7 @@ class StressStrain2d():
                     By[i] += area * normy * s.lambda_(xb, yb) * grad_Ux[i][0]
                     # x-axis oriented face
                     By[i] += area * normx * s.mu(xb, yb) * grad_Ux[i][1]
+                    By[i] -= area * (s.mu(xb, yb)+s.lambda_(xb, yb)) * grad_Uy[i][0] * normx
         
         return By
   
@@ -351,7 +357,7 @@ class StressStrain2d():
                     # y-axis oriented face
                     Bx[i] += Ux_b * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normx * normx
                     # x-axis oriented face
-                    Bx[i] += Ux_b * area * s.mu(xb, yb) / proj_distance * normy * normy        
+                    Bx[i] += Ux_b * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normy * normy       
                 elif cdt_type_x == 'stress' or cdt_type_x == 'Stress':
                     Tnt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
                     Tx_b = Tnt_b[0] * normx - Tnt_b[1] * normy
@@ -392,7 +398,7 @@ class StressStrain2d():
                     # y-axis oriented face
                     By[i] += Uy_b * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normy * normy
                     # x-axis oriented face
-                    By[i] += Uy_b * area * s.mu(xb, yb) / proj_distance * normx * normx        
+                    By[i] += Uy_b * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) / proj_distance * normx * normx        
                 elif cdt_type_y == 'stress' or cdt_type_y == 'Stress':
                     Tnt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
                     Ty_b = Tnt_b[0] * normy + Tnt_b[1] * normx
@@ -441,7 +447,7 @@ class StressStrain2d():
                 # x-axis oriented face
                 Bx[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Ux_x * normx
                 # y-axis oriented face
-                Bx[i] += area * s.mu(xm, ym) * corr_grad_Ux_y * normy
+                Bx[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Ux_y * normy
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -461,7 +467,7 @@ class StressStrain2d():
                     # x-axis oriented face
                     Bx[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Ux_x * normx
                     # y-axis oriented face
-                    Bx[i] += area * s.mu(xb, yb) * corr_grad_Ux_y * normy      
+                    Bx[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Ux_y * normy      
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
                 else:
@@ -508,7 +514,7 @@ class StressStrain2d():
                 # y-axis oriented face
                 By[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Uy_y * normy
                 # x-axis oriented face
-                By[i] += area * s.mu(xm, ym) * corr_grad_Uy_x * normx
+                By[i] += area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * corr_grad_Uy_x * normx
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -528,7 +534,7 @@ class StressStrain2d():
                     # y-axis oriented face
                     By[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Uy_y * normy
                     # x-axis oriented face
-                    By[i] += area * s.mu(xb, yb) * corr_grad_Uy_x * normx      
+                    By[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Uy_x * normx      
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
                 else:
@@ -559,7 +565,7 @@ class StressStrain2d():
                 precond_args (dict, default={}) : arguments for the preconditioner
                 early_stopping (bool, default=False) : flag to enable early stopping
                 inc_trend_counter_max (int, default=1) : maximum number of increasing trends before stopping the iterations
-                atol_scheduler (Callable, default=None) : function to schedule the absolute tolerance for the inner solver
+                atol_scheduler (Callable, default=None) : function to update the tolerance for the inner solver
                 
             Returns:
                 Ux (np.array) x-axis displacement field    
@@ -581,7 +587,7 @@ class StressStrain2d():
         Ax, Ay = s.stiffness()
         # Construct a preconditionner if provided
         Mx = precond(Ax, **precond_args) 
-        My = precond(Ay, **precond_args) 
+        My = precond(Ay, **precond_args)  
         
         Bx_f, By_f = s.source_body_force()
         Bx_b = s.source_boundary_x()
@@ -589,8 +595,8 @@ class StressStrain2d():
         
         # Construct the initial gradients and source terms
         grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
-        Bx_t = s.source_transverse_x(grad_Uy)
-        By_t = s.source_transverse_y(grad_Ux)
+        Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+        By_t = s.source_transverse_y(grad_Ux, grad_Uy)
         Bx_c = s.source_correction_x(grad_Ux)
         By_c = s.source_correction_y(grad_Uy)
         Bx = lambda: Bx_t + Bx_b + Bx_f + Bx_c
@@ -624,11 +630,6 @@ class StressStrain2d():
             else:
                 Ux = output
                 inner_statistics_x = None
-                
-            # Update the source terms
-            grad_Ux = s.grad(Ux)
-            By_t = s.source_transverse_y(grad_Ux)
-            Bx_c = s.source_correction_x(grad_Ux)
                         
             # Solve the system of equations for y-axis
             output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
@@ -638,10 +639,13 @@ class StressStrain2d():
             else: 
                 Uy = output
                 inner_statistics_y = None
-            
-            # Update the source terms
+                
+            grad_Ux = s.grad(Ux)
             grad_Uy = s.grad(Uy)
-            Bx_t = s.source_transverse_x(grad_Uy)
+            # Update the source terms
+            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
+            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux)
             By_c = s.source_correction_y(grad_Uy)
             
             ## END OF OUTER ITERATION ##
@@ -660,10 +664,10 @@ class StressStrain2d():
                 outer_iterations = {'time' : outer_end_time - outer_start_time},
                 inner_iterations = {'x' : inner_statistics_x, 'y' : inner_statistics_y}
             )
-                        
+            
             if atol_scheduler is not None:
                 inner_solver.ATOL = atol_scheduler(s.statistics.on_fly_res_norm_x[-1],s.statistics.on_fly_res_norm_y[-1]) # Update the tolerance for the inner solver
-            
+                        
             # Print the progress of the iterations
             pbar.set_postfix_str(f"Normalized residuals: Rx {s.statistics.on_fly_res_norm_x[-1]:.2e}, Ry {s.statistics.on_fly_res_norm_y[-1]:.2e}, dRx {s.statistics.on_fly_res_norm_x[-1]-s.statistics.on_fly_res_norm_x[-2]:.2e}, dRy {s.statistics.on_fly_res_norm_y[-1]-s.statistics.on_fly_res_norm_y[-2]:.2e}")
     
@@ -730,6 +734,30 @@ class StressStrain2d():
         
         grad_Ux = s.grad(Ux)
         grad_Uy = s.grad(Uy)
+        
+        for i, cell in enumerate(s.mesh.cells):
+            centroid = s.mesh.centroids[cell.centroid]
+            Sxx[i] = s.lambda_(centroid[0], centroid[1]) * (grad_Ux[i][0] + grad_Uy[i][1]) + 2 * s.mu(centroid[0], centroid[1]) * grad_Ux[i][0]
+            Syy[i] = s.lambda_(centroid[0], centroid[1]) * (grad_Ux[i][0] + grad_Uy[i][1]) + 2 * s.mu(centroid[0], centroid[1]) * grad_Uy[i][1]
+            Sxy[i] = s.mu(centroid[0], centroid[1]) * (grad_Ux[i][1] + grad_Uy[i][0])
+        
+        return Sxx, Syy, Sxy
+    
+        
+    def compute_stress_from_grad(s, grad_Ux : np.array, grad_Uy : np.array):
+        """
+            Compute the stress field on the mesh using the displacement field.\n
+            Note that the finite volume methods here assumes a constant stress field in each cell.
+            This approximation introduces an error in the stress field mainly at the boundaries of the domain.
+            
+            Parameters:
+                - grad_Ux (np.array) : gradient of the x-axis displacement field
+                - grad_Uy (np.array) : gradient of the y-axis displacement field
+        """
+        # Initialize the stress fields       
+        Sxx = np.zeros((s.n_cells), dtype=DTYPE)
+        Syy = np.zeros((s.n_cells), dtype=DTYPE)
+        Sxy = np.zeros((s.n_cells), dtype=DTYPE)
         
         for i, cell in enumerate(s.mesh.cells):
             centroid = s.mesh.centroids[cell.centroid]
