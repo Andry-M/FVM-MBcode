@@ -38,7 +38,8 @@ class StressStrain2d_Krylov(StressStrain2d):
               nk_residual : str = 'fix-point',
               nk_res_rtol : float = 1e-10,
               nk_method : str = 'lgmres',
-              nk_precond : str = ''):
+              nk_precond : Callable = lambda *_ : None,
+              nk_precond_args : dict = dict()):
         """
             Solve the elastic strain-stress problem for the given mesh and boundary conditions 
             using the Finite Volume Method and a segregated algorithm.\n
@@ -57,8 +58,9 @@ class StressStrain2d_Krylov(StressStrain2d):
                 nk_residual (str, default='fix-point') : type of residual for the Newton-Krylov method among ('fix-point', 'res-update', 'res-noupdate', 'res-norm-update', 'res-norm-noupdate', 'div-stress-s4f')
                 nk_res_rtol (float, default=1e-10) : relative tolerance for the Newton-Krylov method (max-norm of the nk_residual)
                 nk_method (str, default='lgmres') : method for the Newton-Krylov method among ('lgmres', 'gmres', 'bicgstab', 'cgs')
-                nk_precond (str, default='') : preconditioner for the Newton-Krylov method among ('broyden', 'seg', '')    
-                
+                nk_precond (Callable, default=lambda *_ : None) : function to construct the preconditioner for the Newton-Krylov method
+                nk_precond_args (dict, default={}) : arguments for the preconditioner for the Newton-Krylov method  
+            
             Returns:
                 Ux (np.array) x-axis displacement field    
                 Uy (np.array) y-axis displacement field
@@ -208,21 +210,90 @@ class StressStrain2d_Krylov(StressStrain2d):
             
             return Ux, Uy
         
-        # Chose the selected iteration algorithm
-        if source_direct_update:
-            iteration = segregated_iteration_direct_update
-        else:
-            iteration = segregated_iteration
-        
         # Definition of the different Newton-Krylov residuals
         # Fixed-point residual r(U) = S(U) - U
-        def fix_point(U):
+        def seg_fix_point(U):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             seg_iter = iteration(Ux, Uy)
             return diff_map(np.concatenate(seg_iter), U)
         
-        # Segregated residual with update
-        def res_update(U):
+        # Fixed point residual using source calculated directly from A:
+        # r(U) = B(k+1) - B(k) --> A(U(k+1)) - A(U(k)) = A(U(k+1) - U(k))
+        def seg_fix_point_source_a(U):
+            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
+            seg_iter = iteration(Ux, Uy)
+            return np.array(A @ (np.concatenate(seg_iter) - U)).flatten()
+            
+        # Fixed point residual using source calculated from the gradients:
+        # r(U) = B(U(k+1)) - B(U(k)) = B(k+2) - B(k+1)
+        def seg_fix_point_source_b(U):
+            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
+            
+            old_grad_Ux, old_grad_Uy = s.grad(Ux), s.grad(Uy)
+            old_Bx_t = s.source_transverse_x(old_grad_Ux, old_grad_Uy)
+            old_By_t = s.source_transverse_y(old_grad_Ux, old_grad_Uy)
+            old_Bx_c = s.source_correction_x(old_grad_Ux)
+            old_By_c = s.source_correction_y(old_grad_Uy)
+
+            seg_iter = iteration(Ux, Uy)
+            
+            new_grad_Ux, new_grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
+            new_Bx_t = s.source_transverse_x(new_grad_Ux, new_grad_Uy)
+            new_By_t = s.source_transverse_y(new_grad_Ux, new_grad_Uy)
+            new_Bx_c = s.source_correction_x(new_grad_Ux)
+            new_By_c = s.source_correction_y(new_grad_Uy)
+                        
+            return diff_map(np.concatenate((new_Bx_t+new_Bx_c, new_By_t+new_By_c)), np.concatenate((old_Bx_t+old_Bx_c, old_By_t+old_By_c)))
+        
+        # Fixed point residual using the segregated algorithm residual
+        # r(U) = (AU(k+1) - B(U(k+1))) - (AU(k) - B(U(k)))
+        def seg_fix_point_res(U):
+            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
+            
+            # Construct the initial gradients and source terms
+            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux)
+            By_c = s.source_correction_y(grad_Uy)
+            
+            old_res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
+            old_res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
+            
+            seg_iter = iteration(Ux, Uy)
+            
+            # Construct the initial gradients and source terms
+            grad_Ux, grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
+            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux)
+            By_c = s.source_correction_y(grad_Uy)
+            
+            res_x = residual_map(Ax, seg_iter[0], Bx_t + Bx_b + Bx_f + Bx_c)
+            res_y = residual_map(Ay, seg_iter[1], By_t + By_b + By_f + By_c)
+            
+            return np.concatenate([res_x-old_res_x, res_y-old_res_y])
+        
+        # Residual using the segregated algorithm residual
+        # r(U) = AU(k) - B(U(k))
+        def seg_res(U):
+            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
+            
+            # Construct the initial gradients and source terms
+            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux)
+            By_c = s.source_correction_y(grad_Uy)
+            
+            res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
+            res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
+            
+            return np.concatenate([res_x, res_y])
+        
+        # Residual using the segregated algorithm residual after an iteration
+        # r(U) = AU(k+1) - B(U(k+1))
+        def seg_res_update(U):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
             seg_iter = iteration(Ux, Uy)
@@ -239,57 +310,8 @@ class StressStrain2d_Krylov(StressStrain2d):
             
             return np.concatenate([res_x, res_y])
         
-        # Segregated normalized residual with update
-        def res_norm_update(U):
-            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
-            
-            seg_iter = iteration(Ux, Uy)
-            
-            # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
-            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
-            
-            res_x = residual_norm_map(Ax, seg_iter[0], Bx_t + Bx_b + Bx_f + Bx_c)
-            res_y = residual_norm_map(Ay, seg_iter[1], By_t + By_b + By_f + By_c)
-            
-            return np.concatenate([res_x, res_y])
-        
-        # Segregated normalized residual without update
-        def res_noupdate(U):
-            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
-            
-            # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
-            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
-            
-            res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
-            res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
-            
-            return np.concatenate([res_x, res_y])
-        
-        # Segregated normalized residual without update
-        def res_norm_noupdate(U):
-            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
-
-            # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
-            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
-            
-            res_x = residual_norm_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
-            res_y = residual_norm_map(Ay, Uy, By_t + By_b + By_f + By_c)
-            
-            return np.concatenate([res_x, res_y])
-        
-        # Divergence of the stress tensor + Rhie-Chow stabilization term
+        # Residual using the Divergence of the stress tensor + Rhie-Chow stabilization term
+        # r(U) = div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)
         def div_stress_s4f(U, alpha=1):
             # Initialize the residual array
             residual = np.zeros(s.n_cells*2)
@@ -388,31 +410,53 @@ class StressStrain2d_Krylov(StressStrain2d):
                     
             return residual
         
-        # Divergence of the stress tensor + Rhie-Chow stabilization term after a Picard iteration
+        # Residual using the Divergence of the stress tensor + Rhie-Chow stabilization term after an iteration
+        # r(U) = div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)
         def div_stress_s4f_update(U, alpha=1):
+            Ux, Uy = U[:s.n_cells], U[s.n_cells:]
+            seg_iter = iteration(Ux, Uy)
+            return div_stress_s4f(np.concatenate(seg_iter), alpha=1)
+
+        # Fixed point residual using the Divergence of the stress tensor + Rhie-Chow stabilization term after an iteration
+        # r(U) = [div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)](k+1) - [div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)](k)
+        # Force to use a different alpha for the two iterations to avoid the same value
+        def div_stress_s4f_diff(U, alpha=1):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
             seg_iter = iteration(Ux, Uy)
             
-            return div_stress_s4f(np.concatenate([seg_iter[0], seg_iter[1]]), alpha=alpha)
+            old_div_stress_s4f = div_stress_s4f(U, alpha=0)
+            new_div_stress_s4f = div_stress_s4f(np.concatenate([seg_iter[0], seg_iter[1]]), alpha=alpha)
+            return new_div_stress_s4f - old_div_stress_s4f
         
+        
+        # Chose the selected iteration algorithm
+        if source_direct_update:
+            iteration = segregated_iteration_direct_update
+        else:
+            iteration = segregated_iteration
+                 
         # Chose the selected residual
-        if nk_residual == 'fix-point':
-            krylov_residual = fix_point
-        elif nk_residual == 'res-update':
-            krylov_residual = res_update
-        elif nk_residual == 'res':
-            krylov_residual = res_noupdate
-        elif nk_residual == 'res-norm-update':
-            krylov_residual = res_norm_update
-        elif nk_residual == 'res-norm':
-            krylov_residual = res_norm_noupdate
+        if nk_residual == 'seg-fix-point':
+            krylov_residual = seg_fix_point
+        elif nk_residual == 'seg-fix-point-source-a':
+            krylov_residual = seg_fix_point_source_a
+        elif nk_residual == 'seg-fix-point-source-b':
+            krylov_residual = seg_fix_point_source_b
+        elif nk_residual == 'seg-fix-point-res':
+            krylov_residual = seg_fix_point_res
+        elif nk_residual == 'seg-res':
+            krylov_residual = seg_res
+        elif nk_residual == 'seg-res-update':
+            krylov_residual = seg_res_update
         elif nk_residual == 'div-stress-s4f':
             krylov_residual = div_stress_s4f
         elif nk_residual == 'div-stress-s4f-update':
             krylov_residual = div_stress_s4f_update
+        elif nk_residual == 'div-stress-s4f-diff':
+            krylov_residual = div_stress_s4f_diff
         else:
-            raise ValueError('Unknown residual map')
+            raise ValueError(f"Unknown residual type: {nk_residual}. Available types are: seg-fix-point, seg-fix-point-source-a, seg-fix-point-source-b, seg-fix-point-res, seg-res, seg-res-update, div-stress-s4f, div-stress-s4f-update, div-stress-s4f-diff")
         
         # Run the Picard iterations before the Newton-Krylov method
         if before_nk_niter > 0:
@@ -423,41 +467,63 @@ class StressStrain2d_Krylov(StressStrain2d):
             print('Picard iterations before Newton-Krylov completed\n')
             
         # Define the callback method of Newton-Krylov to store the convergence
-        s.statistics.add('newton_krylov_Ux', [])
-        s.statistics.add('newton_krylov_Uy', [])
-        s.statistics.add('newton_krylov_res', [])
-        def callback(x, f):
-            s.statistics.store(
-                newton_krylov_Ux = x[:s.n_cells],
-                newton_krylov_Uy = x[s.n_cells:],
-                newton_krylov_res = f,
-            )
-            
+        s.statistics.add('nk_Ux', [])
+        s.statistics.add('nk_Uy', [])
+        s.statistics.add('nk_time', [])
+        s.statistics.add('nk_GMRes_size', [])
+        s.statistics.add('nk_div_stress_s4f', [])
+        s.statistics.add('nk_residual', [])
+        
+        n = 0
                 
+        def inner_callback(pr_norm):
+            nonlocal n
+            n += 1
+        
+        def callback(x, f):
+            nonlocal n
+            s.statistics.store(
+                nk_time = time(),
+                nk_Ux = x[:s.n_cells],
+                nk_Uy = x[s.n_cells:],
+                nk_GMRes_size = n,
+                nk_div_stress_s4f = div_stress_s4f(x),
+                nk_residual = f,
+            )
+            n = 0
+            print('Callback called, div_stress_s4f:', np.linalg.norm(s.statistics.nk_div_stress_s4f[-1]))
+        
+        # Construct the segregated algorithm global matrix for the preconditioner
+        A = np.zeros((s.n_cells * 2, s.n_cells * 2))
+        A[:s.n_cells, :s.n_cells] = Ax.toarray()
+        A[s.n_cells:, s.n_cells:] = Ay.toarray()
+    
         print('Starting Newton-Krylov iterations')
         newton_start_time = time()
-        if nk_precond == 'broyden':
-            jac = BroydenFirst()
-            U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    inner_M=InverseJacobian(jac), method=nk_method, f_rtol=nk_res_rtol,
-                                    callback=callback)
-        elif nk_precond == 'seg':
-            # Construct the segregated algorithm matrix for the preconditioner
-            A = np.zeros((s.n_cells * 2, s.n_cells * 2))
-            A[:s.n_cells, :s.n_cells] = Ax.toarray()
-            A[s.n_cells:, s.n_cells:] = Ay.toarray()
-            # Use the same preconditionner as for the segregated algorithm
-            M = precond(sps.csc_matrix(A), **precond_args) 
-            U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    method = nk_method, inner_M=M, f_rtol=nk_res_rtol,
-                                    callback=callback)
-        elif nk_precond == '':
-            U_newton = newton_krylov(krylov_residual, np.concatenate([Ux, Uy]), verbose=True,
-                                    method = nk_method, f_rtol=nk_res_rtol,
-                                    callback=callback)
-        else:
-            raise ValueError('Unknown preconditioner')
-            
+
+        # Use the same preconditionner as for the segregated algorithm
+        M = nk_precond(sps.csc_matrix(A), **nk_precond_args) 
+        callback(np.concatenate([Ux, Uy]), np.zeros(s.n_cells*2))
+        print('Initial residual:', np.linalg.norm(krylov_residual(np.concatenate([Ux, Uy]))))
+        
+        U_newton = newton_krylov(krylov_residual, 
+                                np.concatenate([Ux, Uy]), 
+                                verbose=True,
+                                method = nk_method, 
+                                inner_M=M, 
+                                f_rtol=nk_res_rtol,
+                                f_tol=1e-3, # Safer compared to the default 6e-6
+                                callback=callback, 
+                                inner_callback=inner_callback,
+                                tol_norm=np.linalg.norm, # Force the use of l2 norm 
+                                inner_restart=2000, # Large restart to get the size of the Krylov subspace
+                                inner_callback_type='pr_norm',
+                                inner_rtol = 1e-5, 
+                                maxiter = 10_000)
+        
+        s.statistics.store(
+            nk_time = time(),
+        )
         Ux, Uy = U_newton[:s.n_cells], U_newton[s.n_cells:]
         grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
