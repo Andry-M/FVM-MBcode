@@ -4,5 +4,8 @@ numpy
 matplotlib
 multimethod
 
+# Preconditionners
+ilupp
+
 # Cosmetics
 tqdm
