@@ -154,8 +154,8 @@ class StressStrain2d_Anderson(StressStrain2d):
         
         # Construct the initial gradients and source terms
         grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
-        Bx_t = s.source_transverse_x(grad_Uy)
-        By_t = s.source_transverse_y(grad_Ux)
+        Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+        By_t = s.source_transverse_y(grad_Ux, grad_Uy)
         Bx_c = s.source_correction_x(grad_Ux)
         By_c = s.source_correction_y(grad_Uy)
         Bx = lambda: Bx_t + Bx_b + Bx_f + Bx_c
@@ -188,14 +188,6 @@ class StressStrain2d_Anderson(StressStrain2d):
                 else:
                     Ux = __anderson__mixing__(s.statistics.hist_Ux, anderson_order, damping, relax)
                     Uy = __anderson__mixing__(s.statistics.hist_Uy, anderson_order, damping, relax)
-                
-                # Update the source terms
-                grad_Ux = s.grad(Ux)
-                grad_Uy = s.grad(Uy)
-                Bx_c = s.source_correction_x(grad_Ux)
-                By_c = s.source_correction_y(grad_Uy)
-                Bx_t = s.source_transverse_x(grad_Uy)
-                By_t = s.source_transverse_y(grad_Ux)
             
             else: # Normal iteration
                 
@@ -207,10 +199,6 @@ class StressStrain2d_Anderson(StressStrain2d):
                 else:
                     Ux = output
                     inner_statistics_x = None
-                grad_Ux = s.grad(Ux)
-                # Update the source terms
-                By_t = s.source_transverse_y(grad_Ux)
-                Bx_c = s.source_correction_x(grad_Ux)
                             
                 # Solve the system of equations for y-axis
                 output = solver(Ay, By(), x0=Uy, M=My) # INNER ITERATIONS
@@ -220,10 +208,14 @@ class StressStrain2d_Anderson(StressStrain2d):
                 else: 
                     Uy = output
                     inner_statistics_y = None
-                grad_Uy = s.grad(Uy)
-                # Update the source terms
-                Bx_t = s.source_transverse_x(grad_Uy)
-                By_c = s.source_correction_y(grad_Uy)
+                
+            grad_Ux = s.grad(Ux)
+            grad_Uy = s.grad(Uy)
+            # Update the source terms
+            By_t = s.source_transverse_y(grad_Ux, grad_Uy)
+            Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux)
+            By_c = s.source_correction_y(grad_Uy)
             
             ## END OF OUTER ITERATION ##
             
