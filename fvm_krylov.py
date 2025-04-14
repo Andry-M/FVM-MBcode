@@ -333,6 +333,11 @@ class StressStrain2d_Krylov(StressStrain2d):
                     normx, normy = face['normal'] # Normal vector to the face 
                     area = face['area'] # Length of the face
                     proj_distance = face['proj_distance'] # Distance between the centroids projected on the normal vector
+                    weight = face['weight'] # Weight of the cell in the gradient calculation
+                    orth = face['orth_correction'] # Skewness of the face
+                    skew = face['skew_correction'] # Skewness of the face
+                    distance = face['distance'] # Distance between the centroids
+                    tangential = face['tangential'] # Tangential vector to the face
                     
                     Kbar = 2 * s.mu(xf, yf) + s.lambda_(xf, yf) # Laplacian modulus
                     
@@ -344,15 +349,37 @@ class StressStrain2d_Krylov(StressStrain2d):
                     Sxy_face = (Sxy[i] + Sxy[j]) / 2
                     
                     # Interpolate the gradient of the displacement vector at the face center
-                    grad_Ux_face = (grad_Ux[i] + grad_Ux[j]) / 2
-                    grad_Uy_face = (grad_Uy[i] + grad_Uy[j]) / 2
+                    grad_Ux_face = weight * grad_Ux[i] + (1-weight) * grad_Ux[j] # Weighted gradient of the x-axis displacement field
+                    grad_Uy_face = weight * grad_Uy[i] + (1-weight) * grad_Uy[j] # Weighted gradient of the x-axis displacement field
                     
                     # Compute the traction at the face center
                     traction = [Sxx_face * normx + Sxy_face * normy, Sxy_face * normx + Syy_face * normy]
                     
+                    skew_correction = np.zeros(2)
+                    if distance[0]!=0:
+                        skew_correction[0] = 1/distance[0] * (np.dot(skew, grad_Ux[j] - grad_Ux[i]))
+                    if distance[1]!=0:
+                        skew_correction[1] = 1/distance[1] * (np.dot(skew, grad_Ux[j] - grad_Ux[i]))
+                    grad_Ux_face += skew_correction 
+                    
+                    corr_grad_Ux_x = np.dot(grad_Ux_face, orth/area*normx - tangential*normy)        
+                    corr_grad_Ux_y = np.dot(grad_Ux_face, orth/area*normy + tangential*normx)
+                    
+                    skew_correction = np.zeros(2)
+                    if distance[0]!=0:
+                        skew_correction[0] = 1/distance[0] * (np.dot(skew, grad_Uy[j] - grad_Uy[i]))
+                    if distance[1]!=0:
+                        skew_correction[1] = 1/distance[1] * (np.dot(skew, grad_Uy[j] - grad_Uy[i]))
+                    grad_Uy_face += skew_correction 
+                    
+                    corr_grad_Uy_x = np.dot(grad_Uy_face, orth/area*normx - tangential*normy)        
+                    corr_grad_Uy_y = np.dot(grad_Uy_face, orth/area*normy + tangential*normx) 
+                    
                     # Add the Rhie-Chow term to the traction
-                    traction[0] += alpha * Kbar * ((Ux[j] - Ux[i])/proj_distance - grad_Ux_face[0] * normx - grad_Ux_face[1] * normy)
-                    traction[1] += alpha * Kbar * ((Uy[j] - Uy[i])/proj_distance - grad_Uy_face[0] * normx - grad_Uy_face[1] * normy)
+                    imp_grad_x = (Ux[j] - Ux[i])/proj_distance + corr_grad_Ux_x * normx + corr_grad_Ux_y * normy
+                    imp_grad_y = (Uy[j] - Uy[i])/proj_distance + corr_grad_Uy_x * normx + corr_grad_Uy_y * normy
+                    traction[0] += alpha * Kbar * (imp_grad_x - grad_Ux_face[0] * normx - grad_Ux_face[1] * normy)
+                    traction[1] += alpha * Kbar * (imp_grad_y - grad_Uy_face[0] * normx - grad_Uy_face[1] * normy)
                     
                     traction = np.asarray(traction)*area
                     
@@ -365,10 +392,17 @@ class StressStrain2d_Krylov(StressStrain2d):
                     normx, normy = face['normal'] # Normal vector to the face
                     proj_distance = face['proj_distance'] # Distance between the centroid and the boundary point projected on the normal vector
                     area = face['area'] # Length of the face
+                    orth = face['orth_correction'] # Skewness of the face
+                    tangential = face['tangential'] # Tangential vector to the face
                     
                     Kbar = 2 * s.mu(xb, yb) + s.lambda_(xb, yb) # Laplacian modulus
                     
                     traction = np.zeros(2)
+                    
+                    corr_grad_Ux_x = np.dot(grad_Ux[i], orth/area*normx - tangential*normy)        
+                    corr_grad_Ux_y = np.dot(grad_Ux[i], orth/area*normy + tangential*normx)
+                    corr_grad_Uy_x = np.dot(grad_Uy[i], orth/area*normx - tangential*normy)        
+                    corr_grad_Uy_y = np.dot(grad_Uy[i], orth/area*normy + tangential*normx)  
                     
                     # Boundary conditions are expressed in the (n, t) basis and have to be transformed to the (x, y) basis
                     # x-axis component
@@ -380,7 +414,8 @@ class StressStrain2d_Krylov(StressStrain2d):
                         # Compute the traction at the face center
                         traction[0] = Sxx[i] * normx + Sxy[i] * normy                        
                         # Add the Rhie-Chow term to the traction
-                        traction[0] += alpha * Kbar * ((Ux_b - Ux[i])/proj_distance - grad_Ux[i][0] * normx - grad_Ux[i][1] * normy)
+                        imp_grad_x = (Ux_b - Ux[i])/proj_distance + corr_grad_Ux_x * normx + corr_grad_Ux_y * normy
+                        traction[0] += alpha * Kbar * (imp_grad_x - grad_Ux[i][0] * normx - grad_Ux[i][1] * normy)
                         
                     elif cdt_type == 'stress' or cdt_type == 'Stress':
                         Tnt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
@@ -396,7 +431,8 @@ class StressStrain2d_Krylov(StressStrain2d):
                         # Compute the traction at the face center
                         traction[1] = Sxy[i] * normx + Syy[i] * normy
                         # Add the Rhie-Chow term to the traction
-                        traction[1] += alpha * Kbar * ((Uy_b - Uy[i])/proj_distance - grad_Uy[i][0] * normx - grad_Uy[i][1] * normy)
+                        imp_grad_y = (Uy_b - Uy[i])/proj_distance + corr_grad_Uy_x * normx + corr_grad_Uy_y * normy
+                        traction[1] += alpha * Kbar * (imp_grad_y - grad_Uy[i][0] * normx - grad_Uy[i][1] * normy)
 
                     elif cdt_type == 'stress' or cdt_type == 'Stress':
                         Tnt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
