@@ -236,7 +236,34 @@ class Mesh2d():
                                 }
                                 cell.bstencil[len(bpoints)-1] = dict_face_cell
                                 
-                                break # Stop the loop over the boundary conditions    
+                                break # Stop the loop over the boundary conditions   
+            
+            # Search for the gradient LSQ stencil
+            grad_stencil = []
+            for j, other in enumerate(s.cells): # Loop over the other cells
+                #if i!=j: # Allowing self-comparison stabilizes the gradient estimation
+                shared_vertices = np.intersect1d(cell.vertices, other.vertices)
+                if len(shared_vertices) > 0: # If at least one vertice is shared
+                    grad_stencil.append(j)
+                if s.n_face_max == 3: # If elements are triangles
+                    if len(grad_stencil)==25: # Maximum number of 16 cells (including the current one)
+                        break # Stop to append grad_stencil
+                elif s.n_face_max == 4: # If elements are quadrangles
+                    if len(grad_stencil)==9: # Maximum number of 9 cells (including the current one)
+                        break # Stop to append grad_stencil
+                elif s.n_face_max == 7: # If elements are quadrangles and triangles
+                    if len(grad_stencil)==16: # Maximum number of 16 cells (including the current one)
+                        break # Stop to append grad_stencil
+                    
+            A = [] # Least square matrix
+            for j in grad_stencil: # Loop over the neighboring cells
+                other = s.cells[j]
+                A.append(s.centroids[other.centroid] - s.centroids[cell.centroid])
+                                    
+            A = np.array(A, dtype=DTYPE) # Convert to numpy array
+            grad_estimator = np.linalg.inv(A.T @ A) @ A.T # Calculate the estimator for explicit least square gradient calculation
+            cell.grad_estimator = grad_estimator
+            cell.grad_stencil = np.array(grad_stencil)
             
         # Compute the volume of the cells
         for i, cell in enumerate(s.cells): # Loop over the cells
@@ -258,29 +285,29 @@ class Mesh2d():
             
         s.bpoints = np.array(bpoints, dtype=DTYPE) # Convert to numpy array
         
-    def generate_grad_estimator(s, b_cond : dict):
+    def generate_bgrad_estimator(s, b_cond : dict):
         # Store the information for explicit least square gradient calculation
         for i, cell in enumerate(s.cells): # Loop over the cells
             # Search for the gradient LSQ stencil
-            grad_stencil = []
+            bgrad_stencil = []
             for j, other in enumerate(s.cells): # Loop over the other cells
                 #if i!=j: # Allowing self-comparison stabilizes the gradient estimation
                 shared_vertices = np.intersect1d(cell.vertices, other.vertices)
                 if len(shared_vertices) > 0: # If at least one vertice is shared
-                    grad_stencil.append(j)
+                    bgrad_stencil.append(j)
                 if s.n_face_max == 3: # If elements are triangles
-                    if len(grad_stencil)==25: # Maximum number of 16 cells (including the current one)
+                    if len(bgrad_stencil)==25: # Maximum number of 16 cells (including the current one)
                         break # Stop to append grad_stencil
                 elif s.n_face_max == 4: # If elements are quadrangles
-                    if len(grad_stencil)==9: # Maximum number of 9 cells (including the current one)
+                    if len(bgrad_stencil)==9: # Maximum number of 9 cells (including the current one)
                         break # Stop to append grad_stencil
                 elif s.n_face_max == 7: # If elements are quadrangles and triangles
-                    if len(grad_stencil)==16: # Maximum number of 16 cells (including the current one)
+                    if len(bgrad_stencil)==16: # Maximum number of 16 cells (including the current one)
                         break # Stop to append grad_stencil
                     
             A_x = [] # Least square matrix
             A_y = [] # Least square matrix
-            for j in grad_stencil: # Loop over the neighboring cells
+            for j in bgrad_stencil: # Loop over the neighboring cells
                 other = s.cells[j]
                 A_x.append(s.centroids[other.centroid] - s.centroids[cell.centroid])
 
@@ -299,12 +326,11 @@ class Mesh2d():
                                     
             A_x = np.array(A_x, dtype=DTYPE) # Convert to numpy array
             A_y = np.array(A_y, dtype=DTYPE) # Convert to numpy array
-            grad_estimator_x = np.linalg.inv(A_x.T @ A_x) @ A_x.T # Calculate the estimator for explicit least square gradient calculation
-            grad_estimator_y = np.linalg.inv(A_y.T @ A_y) @ A_y.T # Calculate the estimator for explicit least square gradient calculation
-            cell.grad_estimator_x = grad_estimator_x
-            cell.grad_estimator_y = grad_estimator_y
-            cell.grad_stencil = np.array(grad_stencil)
-
+            bgrad_estimator_x = np.linalg.inv(A_x.T @ A_x) @ A_x.T # Calculate the estimator for explicit least square gradient calculation
+            bgrad_estimator_y = np.linalg.inv(A_y.T @ A_y) @ A_y.T # Calculate the estimator for explicit least square gradient calculation
+            cell.bgrad_estimator_x = bgrad_estimator_x
+            cell.bgrad_estimator_y = bgrad_estimator_y
+            cell.bgrad_stencil = np.array(bgrad_stencil)
 
     def plot(s, figsize=(8,8), filename : str = None):
         """
