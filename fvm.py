@@ -78,7 +78,7 @@ class StressStrain2d():
         Encapsulate the problem of the Finite Volume Method for the stress-strain analysis in 2D.\n
     """
     def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable, alpha : float = 1,
-                 init_Ux : List = None, init_Uy : List = None):
+                 use_bgrad : bool = True, init_Ux : List = None, init_Uy : List = None):
         """
             Parameters:
                 - mesh (Mesh2d) : mesh of the domains
@@ -94,7 +94,9 @@ class StressStrain2d():
         s.lambda_ = lambda_  
         s.f = f
         s.statistics = Statistics()
-        s.mesh.generate_grad_estimator(s.b_cond)
+        s.use_bgrad = use_bgrad
+        if use_bgrad:
+            s.mesh.generate_bgrad_estimator(s.b_cond)
         s.alpha = alpha 
         
         # Initialize the displacement fields
@@ -210,50 +212,90 @@ class StressStrain2d():
         
         return Bx, By
         
+    def grad(s, U : np.array):
+        """
+            Compute the gradient of the displacement field on the mesh using the least squares method.
+            This method is kept for old solver extensions calculating gradients of the two displacement fields separately.
+            It cannot use the boundary gradient estimator.
+
+            Parameters:
+                - U (np.array) : displacement field component
+        """
+        grad_U = [] # Gradient of the x-axis displacement field
+        
+        for i, cell in enumerate(s.mesh.cells): # Iterate through cells
+            grad_estimator = cell.grad_estimator # Gradient estimator matrix
+            grad_stencil = cell.grad_stencil # Gradient estimator stencil
+            
+            differences = []
+            for j in grad_stencil:
+                differences.append(U[j] - U[i])
+            
+            grad_U.append(grad_estimator @ np.array(differences, dtype=DTYPE))
+        
+        grad_U = np.asarray(grad_U, dtype=DTYPE)
+        
+        return grad_U   
+
     def grad(s, Ux : np.array, Uy : np.array):
         """
             Compute the gradient of the displacement field on the mesh using the least squares method.
+            If s.use_bgrad is True, the boundary gradient estimator is used.
 
             Parameters:
                 - U (np.array) : displacement field component
         """
         grad_Ux = [] # Gradient of the x-axis displacement field
         grad_Uy = [] # Gradient of the y-axis displacement field
-        
-        for i, cell in enumerate(s.mesh.cells): # Iterate through cells
-            grad_estimator_x = cell.grad_estimator_x # Gradient estimator matrix
-            grad_estimator_y = cell.grad_estimator_y # Gradient estimator matrix
-            grad_stencil = cell.grad_stencil # Gradient estimator stencil
-            
-            differences_x = []
-            differences_y = []
-            for j in grad_stencil:
-                differences_x.append(Ux[j] - Ux[i])
-                differences_y.append(Uy[j] - Uy[i])
-
-            for b, face in cell.bstencil.items(): # Loop over the boundary points
-                xb, yb = s.mesh.bpoints[b] # Coordinates of the boundary point
-                normx, normy = face['normal'] # Normal vector to the face
-
-                cdt_type_x = s.b_cond['x'][face['bc_id']]['type']
-                cdt_type_y = s.b_cond['y'][face['bc_id']]['type']
+        if s.use_bgrad:
+            for i, cell in enumerate(s.mesh.cells): # Iterate through cells
+                grad_estimator_x = cell.bgrad_estimator_x # Gradient estimator matrix
+                grad_estimator_y = cell.bgrad_estimator_y # Gradient estimator matrix
+                grad_stencil = cell.bgrad_stencil # Gradient estimator stencil
                 
-                if cdt_type_x == 'displacement' or cdt_type_x == 'Displacement':
-                    Unt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
-                    Ux_b = Unt_b[0] * normx - Unt_b[1] * normy
-                    differences_x.append(Ux_b - Ux[i])
-                if cdt_type_y == 'displacement' or cdt_type_y == 'Displacement':
-                    Unt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
-                    Uy_b = Unt_b[0] * normy + Unt_b[1] * normx
-                    differences_y.append(Uy_b - Uy[i])
-            
-            grad_Ux.append(grad_estimator_x @ np.array(differences_x, dtype=DTYPE))
-            grad_Uy.append(grad_estimator_y @ np.array(differences_y, dtype=DTYPE))
+                differences_x = []
+                differences_y = []
+                for j in grad_stencil:
+                    differences_x.append(Ux[j] - Ux[i])
+                    differences_y.append(Uy[j] - Uy[i])
+
+                for b, face in cell.bstencil.items(): # Loop over the boundary points
+                    xb, yb = s.mesh.bpoints[b] # Coordinates of the boundary point
+                    normx, normy = face['normal'] # Normal vector to the face
+
+                    cdt_type_x = s.b_cond['x'][face['bc_id']]['type']
+                    cdt_type_y = s.b_cond['y'][face['bc_id']]['type']
+                    
+                    if cdt_type_x == 'displacement' or cdt_type_x == 'Displacement':
+                        Unt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
+                        Ux_b = Unt_b[0] * normx - Unt_b[1] * normy
+                        differences_x.append(Ux_b - Ux[i])
+                    if cdt_type_y == 'displacement' or cdt_type_y == 'Displacement':
+                        Unt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
+                        Uy_b = Unt_b[0] * normy + Unt_b[1] * normx
+                        differences_y.append(Uy_b - Uy[i])
+                
+                grad_Ux.append(grad_estimator_x @ np.array(differences_x, dtype=DTYPE))
+                grad_Uy.append(grad_estimator_y @ np.array(differences_y, dtype=DTYPE))
+        
+        else:
+            for i, cell in enumerate(s.mesh.cells): # Iterate through cells
+                grad_estimator = cell.grad_estimator # Gradient estimator matrix
+                grad_stencil = cell.grad_stencil # Gradient estimator stencil
+                
+                differences_x = []
+                differences_y = []
+                for j in grad_stencil:
+                    differences_x.append(Ux[j] - Ux[i])
+                    differences_y.append(Uy[j] - Uy[i])
+                
+                grad_Ux.append(grad_estimator @ np.array(differences_x, dtype=DTYPE))
+                grad_Uy.append(grad_estimator @ np.array(differences_y, dtype=DTYPE))
         
         grad_Ux = np.asarray(grad_Ux, dtype=DTYPE)
         grad_Uy = np.asarray(grad_Uy, dtype=DTYPE)
         
-        return grad_Ux, grad_Uy    
+        return grad_Ux, grad_Uy  
     
     def source_transverse_x(s, grad_Ux : np.array = None, grad_Uy : np.array = None):
         """
@@ -794,8 +836,7 @@ class StressStrain2d():
             Syy[i] = s.lambda_(centroid[0], centroid[1]) * (grad_Ux[i][0] + grad_Uy[i][1]) + 2 * s.mu(centroid[0], centroid[1]) * grad_Uy[i][1]
             Sxy[i] = s.mu(centroid[0], centroid[1]) * (grad_Ux[i][1] + grad_Uy[i][0])
         
-        return Sxx, Syy, Sxy
-    
+        return Sxx, Syy, Sxy 
         
     def compute_stress_from_grad(s, grad_Ux : np.array, grad_Uy : np.array):
         """
