@@ -77,7 +77,7 @@ class StressStrain2d():
     """
         Encapsulate the problem of the Finite Volume Method for the stress-strain analysis in 2D.\n
     """
-    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable,
+    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable, alpha : float = 1,
                  init_Ux : List = None, init_Uy : List = None):
         """
             Parameters:
@@ -94,6 +94,8 @@ class StressStrain2d():
         s.lambda_ = lambda_  
         s.f = f
         s.statistics = Statistics()
+        s.mesh.generate_grad_estimator(s.b_cond)
+        s.alpha = alpha 
         
         # Initialize the displacement fields
         def initialize_displacement(init_U):
@@ -208,28 +210,50 @@ class StressStrain2d():
         
         return Bx, By
         
-    def grad(s, U : np.array):
+    def grad(s, Ux : np.array, Uy : np.array):
         """
             Compute the gradient of the displacement field on the mesh using the least squares method.
 
             Parameters:
                 - U (np.array) : displacement field component
         """
-        grad_U = [] # Gradient of the x-axis displacement field
+        grad_Ux = [] # Gradient of the x-axis displacement field
+        grad_Uy = [] # Gradient of the y-axis displacement field
         
         for i, cell in enumerate(s.mesh.cells): # Iterate through cells
-            grad_estimator = cell.grad_estimator # Gradient estimator matrix
+            grad_estimator_x = cell.grad_estimator_x # Gradient estimator matrix
+            grad_estimator_y = cell.grad_estimator_y # Gradient estimator matrix
             grad_stencil = cell.grad_stencil # Gradient estimator stencil
             
-            differences = []
+            differences_x = []
+            differences_y = []
             for j in grad_stencil:
-                differences.append(U[j] - U[i])
+                differences_x.append(Ux[j] - Ux[i])
+                differences_y.append(Uy[j] - Uy[i])
+
+            for b, face in cell.bstencil.items(): # Loop over the boundary points
+                xb, yb = s.mesh.bpoints[b] # Coordinates of the boundary point
+                normx, normy = face['normal'] # Normal vector to the face
+
+                cdt_type_x = s.b_cond['x'][face['bc_id']]['type']
+                cdt_type_y = s.b_cond['y'][face['bc_id']]['type']
+                
+                if cdt_type_x == 'displacement' or cdt_type_x == 'Displacement':
+                    Unt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
+                    Ux_b = Unt_b[0] * normx - Unt_b[1] * normy
+                    differences_x.append(Ux_b - Ux[i])
+                if cdt_type_y == 'displacement' or cdt_type_y == 'Displacement':
+                    Unt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
+                    Uy_b = Unt_b[0] * normy + Unt_b[1] * normx
+                    differences_y.append(Uy_b - Uy[i])
             
-            grad_U.append(grad_estimator @ np.array(differences, dtype=DTYPE))
+            grad_Ux.append(grad_estimator_x @ np.array(differences_x, dtype=DTYPE))
+            grad_Uy.append(grad_estimator_y @ np.array(differences_y, dtype=DTYPE))
         
-        grad_U = np.array(grad_U, dtype=DTYPE)
+        grad_Ux = np.asarray(grad_Ux, dtype=DTYPE)
+        grad_Uy = np.asarray(grad_Uy, dtype=DTYPE)
         
-        return grad_U       
+        return grad_Ux, grad_Uy    
     
     def source_transverse_x(s, grad_Ux : np.array = None, grad_Uy : np.array = None):
         """
@@ -408,7 +432,7 @@ class StressStrain2d():
         
         return By
    
-    def source_correction_x(s, grad_Ux : np.array = None):
+    def source_correction_x(s, Ux : np.array, grad_Ux : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the x-axis component.
                         
@@ -432,6 +456,7 @@ class StressStrain2d():
                 skew = face['skew_correction'] # Skewness of the face
                 distance = face['distance'] # Distance between the centroids
                 tangential = face['tangential'] # Tangential vector to the face
+                proj_distance = face['proj_distance'] # Distance between the centroids projected on the normal vector
 
                 grad_Ux_ij = weight * grad_Ux[i] + (1-weight) * grad_Ux[j] # Weighted gradient of the x-axis displacement field
                 skew_correction = np.zeros(2)
@@ -448,6 +473,10 @@ class StressStrain2d():
                 Bx[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Ux_x * normx
                 # y-axis oriented face
                 Bx[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Ux_y * normy
+
+                # Rhie-Chow
+                Bx[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
+                      ((Ux[j] - Ux[i])/proj_distance - grad_Ux_ij[0] * distance[0]/proj_distance - grad_Ux_ij[1] * distance[1]/proj_distance)
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -457,6 +486,8 @@ class StressStrain2d():
                 area = face['area'] # Length of the face        
                 orth = face['orth_correction'] # Skewness of the face
                 tangential = face['tangential'] # Tangential vector to the face
+                distance = face['distance'] # Distance between the centroids
+                proj_distance = face['proj_distance'] # Distance between the centroids projected on the normal vector
 
                 corr_grad_Ux_x = np.dot(grad_Ux[i], orth/area*normx - tangential*normy)        
                 corr_grad_Ux_y = np.dot(grad_Ux[i], orth/area*normy + tangential*normx)        
@@ -467,7 +498,15 @@ class StressStrain2d():
                     # x-axis oriented face
                     Bx[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Ux_x * normx
                     # y-axis oriented face
-                    Bx[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Ux_y * normy      
+                    Bx[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Ux_y * normy
+
+                    Unt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
+                    Ux_b = Unt_b[0] * normx - Unt_b[1] * normy
+
+                    # Rhie-Chow
+                    Bx[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
+                            ((Ux_b - Ux[i])/proj_distance - grad_Ux[i][0] * distance[0]/proj_distance - grad_Ux[i][1] * distance[1]/proj_distance)
+                    
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
                 else:
@@ -475,7 +514,7 @@ class StressStrain2d():
         
         return Bx
     
-    def source_correction_y(s, grad_Uy : np.array = None):
+    def source_correction_y(s, Uy : np.array, grad_Uy : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the y-axis component.
                         
@@ -499,6 +538,8 @@ class StressStrain2d():
                 skew = face['skew_correction'] # Skewness of the face
                 distance = face['distance'] # Distance between the centroids
                 tangential = face['tangential'] # Tangential vector to the face
+                proj_distance = face['proj_distance'] # Distance between the centroids projected on the normal vector
+
 
                 grad_Uy_ij = weight * grad_Uy[i] + (1-weight) * grad_Uy[j] # Weighted gradient of the x-axis displacement field
                 skew_correction = np.zeros(2)
@@ -515,6 +556,10 @@ class StressStrain2d():
                 By[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Uy_y * normy
                 # x-axis oriented face
                 By[i] += area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * corr_grad_Uy_x * normx
+
+                # Rhie-Chow
+                By[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
+                        ((Uy[j] - Uy[i])/proj_distance - grad_Uy_ij[0] * distance[0]/proj_distance - grad_Uy_ij[1] * distance[1]/proj_distance)
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -524,6 +569,8 @@ class StressStrain2d():
                 area = face['area'] # Length of the face        
                 orth = face['orth_correction'] # Skewness of the face
                 tangential = face['tangential'] # Tangential vector to the face
+                distance = face['distance'] # Distance between the centroids
+                proj_distance = face['proj_distance'] # Distance between the centroids projected on the normal vector
 
                 corr_grad_Uy_x = np.dot(grad_Uy[i], orth/area*normx - tangential*normy)        
                 corr_grad_Uy_y = np.dot(grad_Uy[i], orth/area*normy + tangential*normx)        
@@ -535,6 +582,14 @@ class StressStrain2d():
                     By[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Uy_y * normy
                     # x-axis oriented face
                     By[i] += area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * corr_grad_Uy_x * normx      
+
+                    Unt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
+                    Uy_b = Unt_b[0] * normy + Unt_b[1] * normx
+
+                    # Rhie-Chow
+                    By[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
+                            ((Uy_b - Uy[i])/proj_distance - grad_Uy[i][0] * distance[0]/proj_distance - grad_Uy[i][1] * distance[1]/proj_distance)
+                    
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
                 else:
@@ -594,11 +649,11 @@ class StressStrain2d():
         By_b = s.source_boundary_y()
         
         # Construct the initial gradients and source terms
-        grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+        grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(grad_Ux)
-        By_c = s.source_correction_y(grad_Uy)
+        Bx_c = s.source_correction_x(Ux, grad_Ux)
+        By_c = s.source_correction_y(Uy, grad_Uy)
         Bx = lambda: Bx_t + Bx_b + Bx_f + Bx_c
         By = lambda: By_t + By_b + By_f + By_c
         
@@ -640,13 +695,12 @@ class StressStrain2d():
                 Uy = output
                 inner_statistics_y = None
                 
-            grad_Ux = s.grad(Ux)
-            grad_Uy = s.grad(Uy)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             # Update the source terms
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            By_c = s.source_correction_y(Uy, grad_Uy)
             
             ## END OF OUTER ITERATION ##
             
@@ -732,8 +786,7 @@ class StressStrain2d():
         
         # Compute the gradients of the displacement field
         
-        grad_Ux = s.grad(Ux)
-        grad_Uy = s.grad(Uy)
+        grad_Ux, grad_Uy = s.grad(Ux, Uy)
         
         for i, cell in enumerate(s.mesh.cells):
             centroid = s.mesh.centroids[cell.centroid]

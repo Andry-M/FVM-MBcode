@@ -14,20 +14,21 @@ from scipy.optimize import newton_krylov, BroydenFirst, KrylovJacobian, InverseJ
 
 
 class StressStrain2d_Krylov(StressStrain2d):
-    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable,
+    def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable, alpha : float = 1, 
                  init_Ux : List = None, init_Uy : List = None):
         super().__init__(mesh=mesh,
                          b_cond=b_cond,
                          mu=mu, 
                          lambda_=lambda_, 
-                         f=f, 
+                         f=f,
+                         alpha=alpha, 
                          init_Ux=init_Ux, 
                          init_Uy=init_Uy)
         
     # Residual using the Divergence of the stress tensor + Rhie-Chow stabilization term
     # r(U) = div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)
     # Extracted from the solve method to be able to call it from outside the class.
-    def div_stress_s4f(s, U, alpha=1):
+    def div_stress_s4f(s, U):
         # Initialize the residual array
         residual = np.zeros(s.n_cells*2)
         
@@ -35,7 +36,7 @@ class StressStrain2d_Krylov(StressStrain2d):
         Ux, Uy = U[:s.n_cells], U[s.n_cells:]
         
         # Compute the gradient of the displacement vector 
-        grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+        grad_Ux, grad_Uy = s.grad(Ux, Uy)
         
         # Compute the stress tensor components
         Sxx, Syy, Sxy = s.compute_stress_from_grad(grad_Ux, grad_Uy)
@@ -72,8 +73,8 @@ class StressStrain2d_Krylov(StressStrain2d):
                 imp_grad_x = (Ux[j] - Ux[i])/proj_distance
                 imp_grad_y = (Uy[j] - Uy[i])/proj_distance
                 
-                traction[0] += alpha * Kbar * (imp_grad_x - grad_Ux_face[0] * distance[0]/proj_distance - grad_Ux_face[1] * distance[1]/proj_distance)
-                traction[1] += alpha * Kbar * (imp_grad_y - grad_Uy_face[0] * distance[0]/proj_distance - grad_Uy_face[1] * distance[1]/proj_distance)
+                traction[0] += s.alpha * Kbar * (imp_grad_x - grad_Ux_face[0] * distance[0]/proj_distance - grad_Ux_face[1] * distance[1]/proj_distance)
+                traction[1] += s.alpha * Kbar * (imp_grad_y - grad_Uy_face[0] * distance[0]/proj_distance - grad_Uy_face[1] * distance[1]/proj_distance)
                 
                 traction = np.asarray(traction)*area
                 
@@ -104,7 +105,7 @@ class StressStrain2d_Krylov(StressStrain2d):
                     # Add the Rhie-Chow term to the traction
                     imp_grad_x = (Ux_b - Ux[i])/proj_distance
                     
-                    traction[0] += alpha * Kbar * (imp_grad_x - grad_Ux[i][0] * distance[0]/proj_distance - grad_Ux[i][1] * distance[1]/proj_distance)
+                    traction[0] += s.alpha * Kbar * (imp_grad_x - grad_Ux[i][0] * distance[0]/proj_distance - grad_Ux[i][1] * distance[1]/proj_distance)
                     
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     Tnt_b = s.b_cond['x'][face['bc_id']]['value'](xb, yb)
@@ -122,7 +123,7 @@ class StressStrain2d_Krylov(StressStrain2d):
                     # Add the Rhie-Chow term to the traction
                     imp_grad_y = (Uy_b - Uy[i])/proj_distance #+ corr_grad_Uy_x * distance[0]/proj_distance + corr_grad_Uy_y * distance[1]/proj_distance
 
-                    traction[1] += alpha * Kbar * (imp_grad_y - grad_Uy[i][0] * distance[0]/proj_distance - grad_Uy[i][1] * distance[1]/proj_distance)
+                    traction[1] += s.alpha * Kbar * (imp_grad_y - grad_Uy[i][0] * distance[0]/proj_distance - grad_Uy[i][1] * distance[1]/proj_distance)
 
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     Tnt_b = s.b_cond['y'][face['bc_id']]['value'](xb, yb)
@@ -202,11 +203,11 @@ class StressStrain2d_Krylov(StressStrain2d):
         By_b = s.source_boundary_y()
         
         # Construct the initial gradients and source terms
-        grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+        grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(grad_Ux)
-        By_c = s.source_correction_y(grad_Uy)
+        Bx_c = s.source_correction_x(Ux, grad_Ux)
+        By_c = s.source_correction_y(Uy, grad_Uy)
 
         # Store the initial statistics      
         s.statistics.store(
@@ -225,9 +226,9 @@ class StressStrain2d_Krylov(StressStrain2d):
         def segregated_iteration_direct_update(Ux, Uy, store=False):
             outer_start_time = time()
             
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
             
             # Solve the system of equations for x-axis
             output = solver(Ax, Bx_t + Bx_b + Bx_f + Bx_c, x0=Ux, M=Mx) # INNER ITERATIONS
@@ -238,9 +239,9 @@ class StressStrain2d_Krylov(StressStrain2d):
                 Ux = output
                 inner_statistics_x = None
 
-            grad_Ux = s.grad(Ux)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            By_c = s.source_correction_y(grad_Uy)
+            By_c = s.source_correction_y(Uy, grad_Uy)
                         
             # Solve the system of equations for y-axis
             output = solver(Ay, By_t + By_b + By_f + By_c, x0=Uy, M=My) # INNER ITERATIONS
@@ -254,11 +255,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             outer_end_time = time()
             
             if store:
-                grad_Uy = s.grad(Uy)
+                grad_Ux, grad_Uy = s.grad(Ux, Uy)
                 Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
                 By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-                Bx_c = s.source_correction_x(grad_Ux)
-                By_c = s.source_correction_y(grad_Uy)
+                Bx_c = s.source_correction_x(Ux, grad_Ux)
+                By_c = s.source_correction_y(Uy, grad_Uy)
                 s.statistics.store(
                     trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
                     trend_y = np.linalg.norm(Uy-s.statistics.hist_Uy[-1],1),
@@ -276,11 +277,11 @@ class StressStrain2d_Krylov(StressStrain2d):
         def segregated_iteration(Ux, Uy, store=False):
             outer_start_time = time()
             
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            By_c = s.source_correction_y(grad_Uy)
+            By_c = s.source_correction_y(Uy, grad_Uy)
             
             # Solve the system of equations for x-axis
             output = solver(Ax, Bx_t + Bx_b + Bx_f + Bx_c, x0=Ux, M=Mx) # INNER ITERATIONS
@@ -303,11 +304,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             outer_end_time = time()
             
             if store:
-                grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+                grad_Ux, grad_Uy = s.grad(Ux, Uy)
                 Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-                Bx_c = s.source_correction_x(grad_Ux)
+                Bx_c = s.source_correction_x(Ux, grad_Ux)
                 By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-                By_c = s.source_correction_y(grad_Uy)
+                By_c = s.source_correction_y(Uy, grad_Uy)
                 s.statistics.store(
                         trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
                         trend_y = np.linalg.norm(Uy-s.statistics.hist_Uy[-1],1),
@@ -341,19 +342,19 @@ class StressStrain2d_Krylov(StressStrain2d):
         def seg_fix_point_source_b(U):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
-            old_grad_Ux, old_grad_Uy = s.grad(Ux), s.grad(Uy)
+            old_grad_Ux, old_grad_Uy = s.grad(Ux, Uy)
             old_Bx_t = s.source_transverse_x(old_grad_Ux, old_grad_Uy)
             old_By_t = s.source_transverse_y(old_grad_Ux, old_grad_Uy)
-            old_Bx_c = s.source_correction_x(old_grad_Ux)
-            old_By_c = s.source_correction_y(old_grad_Uy)
+            old_Bx_c = s.source_correction_x(Ux, old_grad_Ux)
+            old_By_c = s.source_correction_y(Uy, old_grad_Uy)
 
             seg_iter = iteration(Ux, Uy)
             
-            new_grad_Ux, new_grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
+            new_grad_Ux, new_grad_Uy = s.grad(seg_iter[0], seg_iter[1])
             new_Bx_t = s.source_transverse_x(new_grad_Ux, new_grad_Uy)
             new_By_t = s.source_transverse_y(new_grad_Ux, new_grad_Uy)
-            new_Bx_c = s.source_correction_x(new_grad_Ux)
-            new_By_c = s.source_correction_y(new_grad_Uy)
+            new_Bx_c = s.source_correction_x(seg_iter[0], new_grad_Ux)
+            new_By_c = s.source_correction_y(seg_iter[1], new_grad_Uy)
                         
             return diff_map(np.concatenate((new_Bx_t+new_Bx_c, new_By_t+new_By_c)), np.concatenate((old_Bx_t+old_Bx_c, old_By_t+old_By_c)))
         
@@ -363,11 +364,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
             # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            By_c = s.source_correction_y(Uy, grad_Uy)
             
             old_res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
             old_res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
@@ -375,11 +376,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             seg_iter = iteration(Ux, Uy)
             
             # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
+            grad_Ux, grad_Uy = s.grad(seg_iter[0], seg_iter[1])
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
+            Bx_c = s.source_correction_x(seg_iter[0], grad_Ux)
+            By_c = s.source_correction_y(seg_iter[1], grad_Uy)
             
             res_x = residual_map(Ax, seg_iter[0], Bx_t + Bx_b + Bx_f + Bx_c)
             res_y = residual_map(Ay, seg_iter[1], By_t + By_b + By_f + By_c)
@@ -392,11 +393,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
             # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+            grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            By_c = s.source_correction_y(Uy, grad_Uy)
             
             res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
             res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
@@ -411,11 +412,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             seg_iter = iteration(Ux, Uy)
             
             # Construct the initial gradients and source terms
-            grad_Ux, grad_Uy = s.grad(seg_iter[0]), s.grad(seg_iter[1])
+            grad_Ux, grad_Uy = s.grad(seg_iter[0], seg_iter[1])
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(grad_Ux)
-            By_c = s.source_correction_y(grad_Uy)
+            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            By_c = s.source_correction_y(Uy, grad_Uy)
             
             res_x = residual_map(Ax, seg_iter[0], Bx_t + Bx_b + Bx_f + Bx_c)
             res_y = residual_map(Ay, seg_iter[1], By_t + By_b + By_f + By_c)
@@ -424,21 +425,21 @@ class StressStrain2d_Krylov(StressStrain2d):
         
         # Residual using the Divergence of the stress tensor + Rhie-Chow stabilization term after an iteration
         # r(U) = div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)
-        def div_stress_s4f_update(U, alpha=1):
+        def div_stress_s4f_update(U):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             seg_iter = iteration(Ux, Uy)
-            return s.div_stress_s4f(np.concatenate(seg_iter), alpha=1)
+            return s.div_stress_s4f(np.concatenate(seg_iter))
 
         # Fixed point residual using the Divergence of the stress tensor + Rhie-Chow stabilization term after an iteration
         # r(U) = [div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)](k+1) - [div(Sigma) + alpha * Kbar * (grad_U_imp - grad_U_exp)](k)
         # Force to use a different alpha for the two iterations to avoid the same value
-        def div_stress_s4f_diff(U, alpha=1):
+        def div_stress_s4f_diff(U):
             Ux, Uy = U[:s.n_cells], U[s.n_cells:]
             
             seg_iter = iteration(Ux, Uy)
             
-            old_div_stress_s4f = s.div_stress_s4f(U, alpha=0)
-            new_div_stress_s4f = s.div_stress_s4f(np.concatenate([seg_iter[0], seg_iter[1]]), alpha=alpha)
+            old_div_stress_s4f = s.div_stress_s4f(U)
+            new_div_stress_s4f = s.div_stress_s4f(np.concatenate([seg_iter[0], seg_iter[1]]))
             return new_div_stress_s4f - old_div_stress_s4f
         
         
@@ -537,11 +538,11 @@ class StressStrain2d_Krylov(StressStrain2d):
             nk_time = time(),
         )
         Ux, Uy = U_newton[:s.n_cells], U_newton[s.n_cells:]
-        grad_Ux, grad_Uy = s.grad(Ux), s.grad(Uy)
+        grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(grad_Ux)
-        By_c = s.source_correction_y(grad_Uy)
+        Bx_c = s.source_correction_x(Ux, grad_Ux)
+        By_c = s.source_correction_y(Uy, grad_Uy)
         newton_end_time = time()
         s.statistics.store(
                 trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),

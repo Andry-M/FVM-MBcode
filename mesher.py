@@ -97,6 +97,7 @@ class Mesh2d():
         s.bpoints =  [] 
         s.cells : List[Cell]
         s.boundaries = []
+        s.n_face_max = -1 # Maximum number of faces per cell
         
     def _generate_tri_mesh(s):   
         """
@@ -129,6 +130,8 @@ class Mesh2d():
             Parameters:
                 - n_face_max (int) : maximum number of faces per cell
         """
+        s.n_face_max = n_face_max # Store the maximum number of faces per cell
+
         bpoints = [] # List of boundary points (dependant on the mesh)
         
         # Fill the inner and outer stencils
@@ -234,35 +237,6 @@ class Mesh2d():
                                 cell.bstencil[len(bpoints)-1] = dict_face_cell
                                 
                                 break # Stop the loop over the boundary conditions    
-                    
-        # Store the information for explicit least square gradient calculation
-        for i, cell in enumerate(s.cells): # Loop over the cells
-            # Search for the gradient LSQ stencil
-            grad_stencil = []
-            for j, other in enumerate(s.cells): # Loop over the other cells
-                #if i!=j: # Allowing self-comparison stabilizes the gradient estimation
-                shared_vertices = np.intersect1d(cell.vertices, other.vertices)
-                if len(shared_vertices) > 0: # If at least one vertice is shared
-                    grad_stencil.append(j)
-                if n_face_max == 3: # If elements are triangles
-                    if len(grad_stencil)==25: # Maximum number of 16 cells (including the current one)
-                        break # Stop to append grad_stencil
-                elif n_face_max == 4: # If elements are quadrangles
-                    if len(grad_stencil)==9: # Maximum number of 9 cells (including the current one)
-                        break # Stop to append grad_stencil
-                elif n_face_max == 7: # If elements are quadrangles and triangles
-                    if len(grad_stencil)==16: # Maximum number of 16 cells (including the current one)
-                        break # Stop to append grad_stencil
-
-            A = [] # Least square matrix
-            for j in grad_stencil: # Loop over the neighboring cells
-                other = s.cells[j]
-                A.append(s.centroids[other.centroid] - s.centroids[cell.centroid])
-                
-            A = np.array(A, dtype=DTYPE) # Convert to numpy array
-            grad_estimator = np.linalg.inv(A.T @ A) @ A.T # Calculate the estimator for explicit least square gradient calculation
-            cell.grad_estimator = grad_estimator
-            cell.grad_stencil = np.array(grad_stencil)
             
         # Compute the volume of the cells
         for i, cell in enumerate(s.cells): # Loop over the cells
@@ -284,6 +258,54 @@ class Mesh2d():
             
         s.bpoints = np.array(bpoints, dtype=DTYPE) # Convert to numpy array
         
+    def generate_grad_estimator(s, b_cond : dict):
+        # Store the information for explicit least square gradient calculation
+        for i, cell in enumerate(s.cells): # Loop over the cells
+            # Search for the gradient LSQ stencil
+            grad_stencil = []
+            for j, other in enumerate(s.cells): # Loop over the other cells
+                #if i!=j: # Allowing self-comparison stabilizes the gradient estimation
+                shared_vertices = np.intersect1d(cell.vertices, other.vertices)
+                if len(shared_vertices) > 0: # If at least one vertice is shared
+                    grad_stencil.append(j)
+                if s.n_face_max == 3: # If elements are triangles
+                    if len(grad_stencil)==25: # Maximum number of 16 cells (including the current one)
+                        break # Stop to append grad_stencil
+                elif s.n_face_max == 4: # If elements are quadrangles
+                    if len(grad_stencil)==9: # Maximum number of 9 cells (including the current one)
+                        break # Stop to append grad_stencil
+                elif s.n_face_max == 7: # If elements are quadrangles and triangles
+                    if len(grad_stencil)==16: # Maximum number of 16 cells (including the current one)
+                        break # Stop to append grad_stencil
+                    
+            A_x = [] # Least square matrix
+            A_y = [] # Least square matrix
+            for j in grad_stencil: # Loop over the neighboring cells
+                other = s.cells[j]
+                A_x.append(s.centroids[other.centroid] - s.centroids[cell.centroid])
+
+            # Copy A and grad_stencil_x to A_y and grad_stencil_y
+            A_y = A_x.copy()
+
+            for b, face in cell.bstencil.items(): # Loop over the boundary points
+                cdt_type_x = b_cond['x'][face['bc_id']]['type']
+                cdt_type_y = b_cond['y'][face['bc_id']]['type']
+                
+                # x-axis boundary condition             
+                if cdt_type_x == 'displacement' or cdt_type_x == 'Displacement':
+                    A_x.append(s.bpoints[b] - s.centroids[cell.centroid])
+                if cdt_type_y == 'displacement' or cdt_type_y == 'Displacement':
+                    A_y.append(s.bpoints[b] - s.centroids[cell.centroid])
+                                    
+            A_x = np.array(A_x, dtype=DTYPE) # Convert to numpy array
+            A_y = np.array(A_y, dtype=DTYPE) # Convert to numpy array
+            grad_estimator_x = np.linalg.inv(A_x.T @ A_x) @ A_x.T # Calculate the estimator for explicit least square gradient calculation
+            grad_estimator_y = np.linalg.inv(A_y.T @ A_y) @ A_y.T # Calculate the estimator for explicit least square gradient calculation
+            cell.grad_estimator_x = grad_estimator_x
+            cell.grad_estimator_y = grad_estimator_y
+            cell.grad_stencil = np.array(grad_stencil)
+
+
     def plot(s, figsize=(8,8), filename : str = None):
         """
             Plot the primary mesh of the domain with centroids, vertices, faces and boundary points.\n
