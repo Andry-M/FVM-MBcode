@@ -15,13 +15,14 @@ from scipy.optimize import newton_krylov, BroydenFirst, KrylovJacobian, InverseJ
 
 class StressStrain2d_Krylov(StressStrain2d):
     def __init__(s, mesh : Mesh2d, b_cond : dict, mu : Callable, lambda_ : Callable, f : Callable, alpha : float = 1, 
-                 init_Ux : List = None, init_Uy : List = None):
+                 use_bgrad : bool = True, init_Ux : List = None, init_Uy : List = None):
         super().__init__(mesh=mesh,
                          b_cond=b_cond,
                          mu=mu, 
                          lambda_=lambda_, 
                          f=f,
-                         alpha=alpha, 
+                         alpha=alpha,
+                         use_bgrad=use_bgrad,
                          init_Ux=init_Ux, 
                          init_Uy=init_Uy)
         
