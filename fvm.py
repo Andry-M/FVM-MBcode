@@ -474,11 +474,12 @@ class StressStrain2d():
         
         return By
    
-    def source_correction_x(s, Ux : np.array, grad_Ux : np.array = None):
+    def source_correction_x(s, grad_Ux : np.array = None, Ux : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the x-axis component.
                         
             Parameters:
+                - Ux (np.array) : displacement field x-axis component
                 - grad_Ux (np.array) : gradient of the x-axis displacement field (LSQ method)
             
             Returns:
@@ -517,8 +518,9 @@ class StressStrain2d():
                 Bx[i] += area * (2*s.mu(xm, ym) + s.lambda_(xm, ym)) * corr_grad_Ux_y * normy
 
                 # Rhie-Chow
-                Bx[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
-                      ((Ux[j] - Ux[i])/proj_distance - grad_Ux_ij[0] * distance[0]/proj_distance - grad_Ux_ij[1] * distance[1]/proj_distance)
+                if Ux is not None:
+                    Bx[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
+                        ((Ux[j] - Ux[i])/proj_distance - grad_Ux_ij[0] * distance[0]/proj_distance - grad_Ux_ij[1] * distance[1]/proj_distance)
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -546,8 +548,9 @@ class StressStrain2d():
                     Ux_b = Unt_b[0] * normx - Unt_b[1] * normy
 
                     # Rhie-Chow
-                    Bx[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
-                            ((Ux_b - Ux[i])/proj_distance - grad_Ux[i][0] * distance[0]/proj_distance - grad_Ux[i][1] * distance[1]/proj_distance)
+                    if Ux is not None:
+                        Bx[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
+                                ((Ux_b - Ux[i])/proj_distance - grad_Ux[i][0] * distance[0]/proj_distance - grad_Ux[i][1] * distance[1]/proj_distance)
                     
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
@@ -556,11 +559,12 @@ class StressStrain2d():
         
         return Bx
     
-    def source_correction_y(s, Uy : np.array, grad_Uy : np.array = None):
+    def source_correction_y(s, grad_Uy : np.array = None, Uy : np.array = None):
         """
             Calculate the source term for the grid correction (non-orthogonality + skewness) for the y-axis component.
                         
             Parameters:
+                - Uy (np.array) : displacement field y-axis component
                 - grad_Uy (np.array) : gradient of the y-axis displacement field (LSQ method)
                             
             Returns:
@@ -600,8 +604,9 @@ class StressStrain2d():
                 By[i] += area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * corr_grad_Uy_x * normx
 
                 # Rhie-Chow
-                By[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
-                        ((Uy[j] - Uy[i])/proj_distance - grad_Uy_ij[0] * distance[0]/proj_distance - grad_Uy_ij[1] * distance[1]/proj_distance)
+                if Uy is not None:
+                    By[i] += (s.alpha-1) * area * (2*s.mu(xm, ym)+s.lambda_(xm, ym)) * \
+                            ((Uy[j] - Uy[i])/proj_distance - grad_Uy_ij[0] * distance[0]/proj_distance - grad_Uy_ij[1] * distance[1]/proj_distance)
             
             # Iterate through outer faces (boundaries)
             for b, face in cell.bstencil.items():
@@ -629,8 +634,9 @@ class StressStrain2d():
                     Uy_b = Unt_b[0] * normy + Unt_b[1] * normx
 
                     # Rhie-Chow
-                    By[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
-                            ((Uy_b - Uy[i])/proj_distance - grad_Uy[i][0] * distance[0]/proj_distance - grad_Uy[i][1] * distance[1]/proj_distance)
+                    if Uy is not None:
+                        By[i] += (s.alpha-1) * area * (2*s.mu(xb, yb)+s.lambda_(xb, yb)) * \
+                                ((Uy_b - Uy[i])/proj_distance - grad_Uy[i][0] * distance[0]/proj_distance - grad_Uy[i][1] * distance[1]/proj_distance)
                     
                 elif cdt_type == 'stress' or cdt_type == 'Stress':
                     pass # No gradient if stress boundary condition which means no correction
@@ -694,8 +700,8 @@ class StressStrain2d():
         grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(Ux, grad_Ux)
-        By_c = s.source_correction_y(Uy, grad_Uy)
+        Bx_c = s.source_correction_x(grad_Ux, Ux)
+        By_c = s.source_correction_y(grad_Uy, Uy)
         Bx = lambda: Bx_t + Bx_b + Bx_f + Bx_c
         By = lambda: By_t + By_b + By_f + By_c
         
@@ -741,8 +747,8 @@ class StressStrain2d():
             # Update the source terms
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
+            By_c = s.source_correction_y(grad_Uy, Uy)
             
             ## END OF OUTER ITERATION ##
             

@@ -207,8 +207,8 @@ class StressStrain2d_Krylov(StressStrain2d):
         grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(Ux, grad_Ux)
-        By_c = s.source_correction_y(Uy, grad_Uy)
+        Bx_c = s.source_correction_x(grad_Ux, Ux)
+        By_c = s.source_correction_y(grad_Uy, Uy)
 
         # Store the initial statistics      
         s.statistics.store(
@@ -229,7 +229,7 @@ class StressStrain2d_Krylov(StressStrain2d):
             
             grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
             
             # Solve the system of equations for x-axis
             output = solver(Ax, Bx_t + Bx_b + Bx_f + Bx_c, x0=Ux, M=Mx) # INNER ITERATIONS
@@ -242,7 +242,7 @@ class StressStrain2d_Krylov(StressStrain2d):
 
             grad_Ux, grad_Uy = s.grad(Ux, Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            By_c = s.source_correction_y(grad_Uy, Uy)
                         
             # Solve the system of equations for y-axis
             output = solver(Ay, By_t + By_b + By_f + By_c, x0=Uy, M=My) # INNER ITERATIONS
@@ -259,8 +259,8 @@ class StressStrain2d_Krylov(StressStrain2d):
                 grad_Ux, grad_Uy = s.grad(Ux, Uy)
                 Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
                 By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-                Bx_c = s.source_correction_x(Ux, grad_Ux)
-                By_c = s.source_correction_y(Uy, grad_Uy)
+                Bx_c = s.source_correction_x(grad_Ux, Ux)
+                By_c = s.source_correction_y(grad_Uy, Uy)
                 s.statistics.store(
                     trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
                     trend_y = np.linalg.norm(Uy-s.statistics.hist_Uy[-1],1),
@@ -280,9 +280,9 @@ class StressStrain2d_Krylov(StressStrain2d):
             
             grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            By_c = s.source_correction_y(grad_Uy, Uy)
             
             # Solve the system of equations for x-axis
             output = solver(Ax, Bx_t + Bx_b + Bx_f + Bx_c, x0=Ux, M=Mx) # INNER ITERATIONS
@@ -307,9 +307,9 @@ class StressStrain2d_Krylov(StressStrain2d):
             if store:
                 grad_Ux, grad_Uy = s.grad(Ux, Uy)
                 Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
-                Bx_c = s.source_correction_x(Ux, grad_Ux)
+                Bx_c = s.source_correction_x(grad_Ux, Ux)
                 By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-                By_c = s.source_correction_y(Uy, grad_Uy)
+                By_c = s.source_correction_y(grad_Uy, Uy)
                 s.statistics.store(
                         trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
                         trend_y = np.linalg.norm(Uy-s.statistics.hist_Uy[-1],1),
@@ -368,8 +368,8 @@ class StressStrain2d_Krylov(StressStrain2d):
             grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
+            By_c = s.source_correction_y(grad_Uy, Uy)
             
             old_res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
             old_res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
@@ -397,8 +397,8 @@ class StressStrain2d_Krylov(StressStrain2d):
             grad_Ux, grad_Uy = s.grad(Ux, Uy)
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
+            By_c = s.source_correction_y(grad_Uy, Uy)
             
             res_x = residual_map(Ax, Ux, Bx_t + Bx_b + Bx_f + Bx_c)
             res_y = residual_map(Ay, Uy, By_t + By_b + By_f + By_c)
@@ -416,8 +416,8 @@ class StressStrain2d_Krylov(StressStrain2d):
             grad_Ux, grad_Uy = s.grad(seg_iter[0], seg_iter[1])
             Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
             By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-            Bx_c = s.source_correction_x(Ux, grad_Ux)
-            By_c = s.source_correction_y(Uy, grad_Uy)
+            Bx_c = s.source_correction_x(grad_Ux, Ux)
+            By_c = s.source_correction_y(grad_Uy, Uy)
             
             res_x = residual_map(Ax, seg_iter[0], Bx_t + Bx_b + Bx_f + Bx_c)
             res_y = residual_map(Ay, seg_iter[1], By_t + By_b + By_f + By_c)
@@ -542,8 +542,8 @@ class StressStrain2d_Krylov(StressStrain2d):
         grad_Ux, grad_Uy = s.grad(Ux, Uy)
         Bx_t = s.source_transverse_x(grad_Ux, grad_Uy)
         By_t = s.source_transverse_y(grad_Ux, grad_Uy)
-        Bx_c = s.source_correction_x(Ux, grad_Ux)
-        By_c = s.source_correction_y(Uy, grad_Uy)
+        Bx_c = s.source_correction_x(grad_Ux, Ux)
+        By_c = s.source_correction_y(grad_Uy, Uy)
         newton_end_time = time()
         s.statistics.store(
                 trend_x = np.linalg.norm(Ux-s.statistics.hist_Ux[-1],1),
