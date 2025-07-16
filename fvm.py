@@ -21,6 +21,7 @@ import scipy.sparse as sps        # Sparse matrices
 from typing import Callable       # Type specifications
 from tqdm import tqdm             # Loop progression bar
 from time import time             # Time measurement  
+from multimethod import multimethod
 
 class Statistics():
     """
@@ -212,7 +213,7 @@ class StressStrain2d():
         
         return Bx, By
         
-    def grad(s, U : np.array):
+    def _grad(s, U : np.array):
         """
             Compute the gradient of the displacement field on the mesh using the least squares method.
             This method is kept for old solver extensions calculating gradients of the two displacement fields separately.
@@ -237,7 +238,7 @@ class StressStrain2d():
         
         return grad_U   
 
-    def grad(s, Ux : np.array, Uy : np.array):
+    def grad(s, Ux : np.array, Uy : np.array = None):
         """
             Compute the gradient of the displacement field on the mesh using the least squares method.
             If s.use_bgrad is True, the boundary gradient estimator is used.
@@ -245,6 +246,8 @@ class StressStrain2d():
             Parameters:
                 - U (np.array) : displacement field component
         """
+        if Uy is None:
+            return s._grad(Ux)
         grad_Ux = [] # Gradient of the x-axis displacement field
         grad_Uy = [] # Gradient of the y-axis displacement field
         if s.use_bgrad:
