@@ -3,7 +3,7 @@
 # Author: Andry Guillaume Jean-Marie Monlon
 # Version: 1.0
 # Creation date: 12/02/2025
-# Context: Semester project - INCEPTION – Investigating New Convergence schEmes 
+# Context: INCEPTION – Investigating New Convergence schEmes 
 #          for Performance and Time Improvement Of fuel and Neutronics calculations
 #
 # Description: Machine learning models and methods to be used for acceleration techniques in MBCode

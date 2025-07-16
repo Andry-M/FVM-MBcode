@@ -3,7 +3,7 @@
 # Author: Andry Guillaume Jean-Marie Monlon
 # Version: 1.0
 # Creation date: 07/02/2025
-# Context: Semester project - INCEPTION – Investigating New Convergence schEmes 
+# Context: INCEPTION – Investigating New Convergence schEmes 
 #          for Performance and Time Improvement Of fuel and Neutronics calculations
 #
 # Description: Linear solvers for the finite volume method implemented in MBcode

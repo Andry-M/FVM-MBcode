@@ -3,7 +3,7 @@
 # Author: Andry Guillaume Jean-Marie Monlon
 # Version: 1.0
 # Creation date: 28/11/2024
-# Context: Semester project - INCEPTION – Investigating New Convergence schEmes 
+# Context: INCEPTION – Investigating New Convergence schEmes 
 #          for Performance and Time Improvement Of fuel and Neutronics calculations
 #
 # Description: Post-processing functions for the Finite Volume Method implemented in MBcode

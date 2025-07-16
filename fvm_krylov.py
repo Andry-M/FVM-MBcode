@@ -530,10 +530,12 @@ class StressStrain2d_Krylov(StressStrain2d):
                                 callback=callback, 
                                 inner_callback=inner_callback,
                                 tol_norm=np.linalg.norm, # Force the use of l2 norm 
-                                inner_restart=2000, # Large restart to get the size of the Krylov subspace
-                                inner_callback_type='pr_norm',
-                                inner_rtol = 1e-5, 
-                                maxiter = 10_000)
+                                inner_inner_m = 50,
+                                #inner_restart=2000, # Large restart to get the size of the Krylov subspace
+                                #inner_callback_type='pr_norm',
+                                inner_rtol = 1e-10, 
+                                iter = 35)
+                                #maxiter = 30)
         
         s.statistics.store(
             nk_time = time(),

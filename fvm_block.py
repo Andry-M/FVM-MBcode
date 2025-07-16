@@ -3,7 +3,7 @@
 # Author: Andry Guillaume Jean-Marie Monlon
 # Version: 1.0
 # Creation date: 02/04/2025
-# Context: Semester project - INCEPTION – Investigating New Convergence schEmes 
+# Context: INCEPTION – Investigating New Convergence schEmes 
 #          for Performance and Time Improvement Of fuel and Neutronics calculations
 #
 # Description: Modification of the Finite Volume Method (FVM) solver for the
