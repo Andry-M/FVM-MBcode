@@ -149,7 +149,7 @@ class StressStrain2d_Krylov(StressStrain2d):
               inc_trend_counter_max : int = 1,
               before_nk_niter : int = 0,
               source_direct_update : bool = False,
-              nk_residual : str = 'fix-point',
+              nk_residual : str = 'seg-fix-point',
               nk_res_rtol : float = 1e-10,
               nk_method : str = 'lgmres',
               nk_precond : Callable = lambda *_ : None,
@@ -529,12 +529,12 @@ class StressStrain2d_Krylov(StressStrain2d):
                                 f_tol=1e-3, # Safer compared to the default 6e-6
                                 callback=callback, 
                                 inner_callback=inner_callback,
-                                tol_norm=np.linalg.norm, # Force the use of l2 norm 
-                                inner_inner_m = 50,
-                                #inner_restart=2000, # Large restart to get the size of the Krylov subspace
+                                tol_norm=np.linalg.norm) # Force the use of l2 norm 
+                                #inner_inner_m = 50,
+                                #inner_restart=50, # Large restart to get the size of the Krylov subspace
                                 #inner_callback_type='pr_norm',
-                                inner_rtol = 1e-10, 
-                                iter = 35)
+                                #inner_rtol = 1e-10, 
+                                #iter = 35)
                                 #maxiter = 30)
         
         s.statistics.store(
