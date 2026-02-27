@@ -214,8 +214,8 @@ def plot_point_solution_imshow(points : np.array, Ux : np.array, Uy : np.array, 
     axs[0].set_xlabel('X-axis', fontsize=15)
     axs[0].set_ylabel('Y-axis', fontsize=15)
     axs[0].axis('equal')
-    axs[0].set_xlim(0, np.ceil(x_max));
-    axs[0].set_ylim(0, np.ceil(y_max));
+    #axs[0].set_xlim(0, np.ceil(x_max));
+    #axs[0].set_ylim(0, np.ceil(y_max));
     cbar_x = plt.colorbar(imshow_x, ax=axs[0], orientation='vertical', pad=0.01)
     cbar_x.ax.tick_params(labelsize=13)  # Increase font size of colorbar values
 
@@ -225,8 +225,8 @@ def plot_point_solution_imshow(points : np.array, Ux : np.array, Uy : np.array, 
     axs[1].set_xlabel('X-axis', fontsize=15)
     axs[1].set_ylabel('Y-axis', fontsize=15)
     axs[1].axis('equal')
-    axs[1].set_xlim(0, np.ceil(x_max));
-    axs[1].set_ylim(0, np.ceil(y_max));
+    #axs[1].set_xlim(0, np.ceil(x_max));
+    #axs[1].set_ylim(0, np.ceil(y_max));
     cbar_y = plt.colorbar(imshow_y, ax=axs[1], orientation='vertical', pad=0.01)
     cbar_y.ax.tick_params(labelsize=13)  # Increase font size of colorbar values
     
